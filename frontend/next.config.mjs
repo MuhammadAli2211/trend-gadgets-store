@@ -4,7 +4,7 @@ const nextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "https://trend-gadgets-api.netlify.app/api/:path*",
+        destination: "https://trend-gadgets-api.vercel.app/api/:path*",
       },
     ];
   },

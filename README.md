@@ -39,25 +39,24 @@ The local site runs at `http://localhost:3000`; the API runs at `http://localhos
 
 ## Deploy on Netlify
 
-The repository is prepared for two Netlify sites connected to the same GitHub repository:
+The Netlify storefront can use the existing Vercel API deployment. The production `/api/*` rewrite in `frontend/next.config.mjs` points to `https://trend-gadgets-api.vercel.app/api/*`, so the storefront and API can remain on separate hosts:
 
-1. Create the storefront site with **Base directory** set to `frontend`. Netlify detects Next.js and builds it with `npm run build`.
-2. Create the API site with **Base directory** set to `backend`. It deploys the Express API as a Netlify Function and checks scheduled posts every five minutes.
-3. Set `NEXT_PUBLIC_API_URL` on the storefront to `https://YOUR-API-SITE.netlify.app/api`.
-4. Set the production variables from `backend/.env.example` on the API site. Set `FRONTEND_URL` to `https://YOUR-STOREFRONT.netlify.app` (no trailing slash), and set `META_REDIRECT_URI` and `INSTAGRAM_REDIRECT_URI` to the API site's callback URLs when social publishing is enabled.
-5. Add those callback URLs in the Meta developer settings, then connect the social accounts again from the live admin dashboard.
+1. Create or keep the storefront site with **Base directory** set to `frontend`. Netlify builds it with `npm run build`.
+2. Keep the existing backend on Vercel and configure the production values from `backend/.env.example` there. Its `FRONTEND_URL` should be the Vercel storefront origin; the Netlify storefront origin is also allowed in the backend CORS configuration.
+3. After changing `frontend/next.config.mjs`, redeploy the storefront so `/api/*` requests reach the live Vercel backend.
+4. If social publishing is enabled, set the Meta callback URLs to the Vercel backend callbacks in the Meta developer settings, then reconnect the accounts from the live admin dashboard.
 
-Keep the existing Vercel deployments until both Netlify sites are live and verified. The Netlify Free plan has a monthly usage cap; its functions can pause if the account reaches that cap. Serverless request-size and execution-time limits also apply, so large video uploads and long FFmpeg reel jobs may still need a different media flow or a persistent server.
+The backend does not need a second Netlify deployment for this setup. Netlify's Free plan has a monthly usage cap. Large video uploads and long FFmpeg reel jobs need a persistent server or a direct-to-Cloudinary media flow because serverless functions have request-size and execution-time limits.
 
 ## Deploy on Vercel
 
 1. Import this repository in Vercel and set **Root Directory** to `frontend`.
-2. Keep the detected Next.js framework and set the production environment variable `NEXT_PUBLIC_API_URL` to the public API base URL, including `/api` (for example, `https://api.example.com/api`). Add it for Production and Preview if both environments should work.
+2. Keep the detected Next.js framework. Production requests use the `/api/*` rewrite in `frontend/next.config.mjs` to reach the deployed backend; `NEXT_PUBLIC_API_URL` is only used by local development.
 3. Deploy. Vercel uses `frontend/vercel.json` and `npm run build`.
 4. Import this repository again as a second Vercel project and set **Root Directory** to `backend`. This is a separate Vercel project and deployment from the frontend.
 5. In the backend project's environment variables, add the production values from `backend/.env.example`. Set `PORT` only if required (Vercel supplies it for local Node servers; its function entry does not need it). Use a MongoDB Atlas `MONGO_URI`, a random `JWT_SECRET` of at least 32 characters, and a separate long random `CRON_SECRET`. Add Cloudinary credentials for product media. Set `META_REDIRECT_URI` and `INSTAGRAM_REDIRECT_URI` to the backend's deployed `/api/social-accounts/.../callback` URLs if social publishing is enabled.
 6. Deploy the backend. Its URL will look like `https://your-backend.vercel.app`.
-7. Set `FRONTEND_URL` in the backend to the live storefront origin (no trailing slash). Set `NEXT_PUBLIC_API_URL` in the frontend to `https://your-backend.vercel.app/api`, then redeploy both projects. The CORS allowlist currently accepts this one frontend origin.
+7. Set `FRONTEND_URL` in the backend to `https://trend-gadgets-storefront.vercel.app` (no trailing slash), then redeploy both projects. The Netlify storefront origin is also allowed by the backend CORS configuration.
 8. Add matching Facebook and Instagram callback URLs in Meta developer settings, then reconnect the accounts from the deployed admin dashboard.
 
 The backend uses Vercel Cron to check schedules daily at 08:00 Pakistan time on the free Hobby plan. Hobby permits only one cron run per day, so social posts scheduled for other times will not publish promptly on this plan. Configure `CRON_SECRET` in the backend project so Vercel sends the matching bearer token to the protected cron route. The 30-second in-process worker runs only on a persistent Node host, not in Vercel Functions.
