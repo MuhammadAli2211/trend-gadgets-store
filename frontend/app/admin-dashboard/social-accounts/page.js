@@ -3,13 +3,15 @@
 
 import { useEffect, useState } from "react";
 
-const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
-).replace(/\/+$/, "");
+const API_URL =
+  process.env.NODE_ENV === "production"
+    ? "/api"
+    : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api").replace(/\/+$/, "");
 
-const INSTAGRAM_OAUTH_API_URL = (
-  process.env.NEXT_PUBLIC_INSTAGRAM_OAUTH_API_URL || API_URL
-).replace(/\/+$/, "");
+const INSTAGRAM_OAUTH_API_URL =
+  process.env.NODE_ENV === "production"
+    ? API_URL
+    : (process.env.NEXT_PUBLIC_INSTAGRAM_OAUTH_API_URL || API_URL).replace(/\/+$/, "");
 
 export default function SocialAccountsPage() {
   const [accounts, setAccounts] = useState([]);
