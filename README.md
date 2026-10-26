@@ -35,7 +35,7 @@ Cart2Door is a Next.js storefront and admin dashboard backed by an Express API a
    npm run create-admin
    ```
 
-The local site runs at `http://localhost:3000`; the API runs at `http://localhost:5000/api`. The storefront uses the configured WhatsApp number (default `92344295070`, corresponding to `03442905070`). Update it from **Admin Dashboard → Settings** if needed.
+The local site runs at `http://localhost:3000`; the API runs at `http://localhost:5000/api`. The storefront uses the configured WhatsApp number (default `923442905070`, corresponding to `03442905070`). Update it from **Admin Dashboard → Settings** if needed.
 
 ## Deploy on Vercel
 

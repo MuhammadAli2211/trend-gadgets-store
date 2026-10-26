@@ -122,7 +122,7 @@ const getWhatsAppSettings = async (req, res) => {
 
     if (!setting) {
       setting = await Setting.create({
-        whatsappNumber: "92344295070",
+        whatsappNumber: process.env.WHATSAPP_NUMBER || "923442905070",
         whatsappMessage: "",
       });
     }
@@ -130,7 +130,7 @@ const getWhatsAppSettings = async (req, res) => {
     res.json({
       success: true,
       settings: {
-        whatsappNumber: setting.whatsappNumber || "92344295070",
+        whatsappNumber: setting.whatsappNumber || process.env.WHATSAPP_NUMBER || "923442905070",
         whatsappMessage: setting.whatsappMessage,
       },
     });

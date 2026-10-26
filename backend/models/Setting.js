@@ -4,7 +4,7 @@ const settingSchema = new mongoose.Schema(
   {
     whatsappNumber: {
       type: String,
-      default: "92344295070",
+      default: process.env.WHATSAPP_NUMBER || "923442905070",
       trim: true,
     },
 

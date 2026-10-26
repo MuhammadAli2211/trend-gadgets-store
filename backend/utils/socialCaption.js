@@ -11,7 +11,11 @@ const buildProductHashtags = (product) => [...new Set([
 const appendProductHashtags = (caption, product) => {
   const text = String(caption || "").trim().slice(0, 1500);
   const sections = [text];
-  if (!/for order contact:\s*03442905070/i.test(text)) sections.push("For order contact: 03442905070");
+  const internationalPhone = String(process.env.WHATSAPP_NUMBER || "923442905070").replace(/\D/g, "");
+  const contactPhone = internationalPhone.startsWith("92")
+    ? `0${internationalPhone.slice(2)}`
+    : internationalPhone;
+  if (!/for order contact:/i.test(text)) sections.push(`For order contact: ${contactPhone}`);
   const websiteUrl = String(process.env.FRONTEND_URL || "").trim();
   if (websiteUrl && !text.includes(websiteUrl)) sections.push(websiteUrl);
   const hashtags = buildProductHashtags(product);

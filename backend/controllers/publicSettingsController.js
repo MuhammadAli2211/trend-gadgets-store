@@ -8,7 +8,7 @@ const getWhatsAppSettings = async (req, res) => {
       success: true,
       settings: {
         whatsappNumber:
-          setting?.whatsappNumber || "92344295070",
+          setting?.whatsappNumber || process.env.WHATSAPP_NUMBER || "923442905070",
 
         whatsappMessage:
           setting?.whatsappMessage || "",
