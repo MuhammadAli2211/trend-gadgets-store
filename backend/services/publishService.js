@@ -1,0 +1,2127 @@
+
+const axios = require("axios");
+
+const Schedule = require("../models/Schedule");
+const Content = require("../models/Content");
+const Product = require("../models/Product");
+const SocialAccount = require("../models/SocialAccount");
+
+const {
+  generateFreshReelContent,
+} = require("./reelContentService");
+
+const META_GRAPH_VERSION =
+  process.env.META_GRAPH_VERSION || "v24.0";
+
+const META_LOGIN_CONFIG_ID =
+  process.env.META_LOGIN_CONFIG_ID;
+
+const META_GRAPH_BASE =
+  `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+
+const INSTAGRAM_GRAPH_BASE =
+  "https://graph.instagram.com";
+
+// ======================================================
+// HELPERS
+// ======================================================
+
+const sleep = (ms) =>
+  new Promise((resolve) =>
+    setTimeout(resolve, ms)
+  );
+
+// ======================================================
+// GET PLATFORMS
+// ======================================================
+
+const getSchedulePlatforms = (schedule) => {
+  if (
+    Array.isArray(schedule.platforms) &&
+    schedule.platforms.length > 0
+  ) {
+    return [
+      ...new Set(
+        schedule.platforms.filter((platform) =>
+          ["facebook", "instagram", "tiktok"].includes(platform)
+        )
+      ),
+    ];
+  }
+
+  if (["facebook", "instagram", "tiktok"].includes(schedule.platform)) {
+    return [schedule.platform];
+  }
+
+  return [];
+};
+
+// ======================================================
+// FACEBOOK ACCOUNT
+// ======================================================
+
+const getFacebookAccount = async () => {
+  const account =
+    await SocialAccount.findOne({
+      platform: "facebook",
+      status: "connected",
+      accessToken: {
+        $exists: true,
+        $ne: "",
+      },
+    }).sort({
+      updatedAt: -1,
+    });
+
+  if (!account) {
+    throw new Error(
+      "Facebook account is not connected."
+    );
+  }
+
+  const pageId =
+    account.pageId ||
+    account.accountId;
+
+  if (!pageId) {
+    throw new Error(
+      "Facebook Page ID is missing."
+    );
+  }
+
+  if (!account.accessToken) {
+    throw new Error(
+      "Facebook Page access token is missing."
+    );
+  }
+
+  return {
+    account,
+    pageId,
+    accessToken:
+      account.accessToken,
+  };
+};
+
+// ======================================================
+// INSTAGRAM ACCOUNT
+// ======================================================
+
+const getInstagramAccount =
+  async () => {
+    const account =
+      await SocialAccount.findOne({
+        platform: "instagram",
+        status: "connected",
+        accessToken: {
+          $exists: true,
+          $ne: "",
+        },
+      }).sort({
+        updatedAt: -1,
+      });
+
+    if (!account) {
+      throw new Error(
+        "Instagram account is not connected."
+      );
+    }
+
+    const instagramAccountId =
+      account.instagramAccountId ||
+      account.accountId;
+
+    if (!instagramAccountId) {
+      throw new Error(
+        "Instagram account ID is missing."
+      );
+    }
+
+    if (!account.accessToken) {
+      throw new Error(
+        "Instagram access token is missing."
+      );
+    }
+
+    return {
+      account,
+      instagramAccountId:
+        String(instagramAccountId),
+      accessToken:
+        account.accessToken,
+    };
+  };
+
+// ======================================================
+// VERIFY INSTAGRAM ACCOUNT
+// ======================================================
+
+const verifyInstagramAccount =
+  async ({
+    instagramAccountId,
+    accessToken,
+  }) => {
+    try {
+      const response =
+        await axios.get(
+          `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}`,
+          {
+            params: {
+              fields:
+                "id,username,name",
+
+              access_token:
+                accessToken,
+            },
+          }
+        );
+
+      console.log(
+        "Instagram account verified:",
+        response.data
+      );
+
+      return response.data;
+    } catch (error) {
+      throw formatMetaError(
+        error,
+        "Instagram account verification failed"
+      );
+    }
+  };
+
+// ======================================================
+// FACEBOOK REEL
+// ======================================================
+
+const publishFacebookReel =
+  async ({
+    content,
+    account,
+  }) => {
+    const pageId =
+      account.pageId ||
+      account.accountId;
+
+    const accessToken =
+      account.accessToken;
+
+    const videoUrl =
+      content?.media?.url;
+
+    if (!videoUrl) {
+      throw new Error(
+        "Reel video URL is missing."
+      );
+    }
+
+    console.log(
+      "Publishing Facebook Reel..."
+    );
+
+    // ----------------------------------------------
+    // START
+    // ----------------------------------------------
+
+    let startResponse;
+
+    try {
+      startResponse =
+        await axios.post(
+          `${META_GRAPH_BASE}/${pageId}/video_reels`,
+          null,
+          {
+            params: {
+              upload_phase:
+                "start",
+
+              access_token:
+                accessToken,
+            },
+          }
+        );
+    } catch (error) {
+      throw formatMetaError(
+        error,
+        "Facebook Reel start failed"
+      );
+    }
+
+    const videoId =
+      startResponse?.data?.video_id;
+
+    const uploadUrl =
+      startResponse?.data?.upload_url;
+
+    if (!videoId) {
+      throw new Error(
+        "Facebook did not return video_id."
+      );
+    }
+
+    if (!uploadUrl) {
+      throw new Error(
+        "Facebook did not return upload_url."
+      );
+    }
+
+    console.log(
+      "Facebook video ID:",
+      videoId
+    );
+
+    // ----------------------------------------------
+    // DOWNLOAD CLOUDINARY VIDEO
+    // ----------------------------------------------
+
+    let videoResponse;
+
+    try {
+      videoResponse =
+        await axios.get(
+          videoUrl,
+          {
+            responseType:
+              "arraybuffer",
+          }
+        );
+    } catch (error) {
+      throw new Error(
+        `Unable to download Reel from Cloudinary: ${error.message}`
+      );
+    }
+
+    const videoBuffer =
+      Buffer.from(
+        videoResponse.data
+      );
+
+    // ----------------------------------------------
+    // UPLOAD TO FACEBOOK
+    // ----------------------------------------------
+
+    try {
+      await axios.post(
+        uploadUrl,
+        videoBuffer,
+        {
+          headers: {
+            Authorization:
+              `OAuth ${accessToken}`,
+
+            offset:
+              "0",
+
+            file_size:
+              videoBuffer.length,
+
+            "Content-Type":
+              "application/octet-stream",
+          },
+
+          maxContentLength:
+            Infinity,
+
+          maxBodyLength:
+            Infinity,
+        }
+      );
+    } catch (error) {
+      throw formatMetaError(
+        error,
+        "Facebook Reel upload failed"
+      );
+    }
+
+    // ----------------------------------------------
+    // FINISH / PUBLISH
+    // ----------------------------------------------
+
+    try {
+      await axios.post(
+        `${META_GRAPH_BASE}/${pageId}/video_reels`,
+        null,
+        {
+          params: {
+            upload_phase:
+              "finish",
+
+            video_id:
+              videoId,
+
+            video_state:
+              "PUBLISHED",
+
+            description:
+              content.caption || "",
+
+            access_token:
+              accessToken,
+          },
+        }
+      );
+    } catch (error) {
+      throw formatMetaError(
+        error,
+        "Facebook Reel publish failed"
+      );
+    }
+
+    console.log(
+      "Facebook Reel published:",
+      videoId
+    );
+
+    // ----------------------------------------------
+// GET FACEBOOK PERMALINK
+// ----------------------------------------------
+
+let publishedUrl = "";
+
+try {
+  await sleep(5000);
+
+  console.log(
+    "Checking Facebook Reel permalink..."
+  );
+
+  const result =
+    await axios.get(
+      `${META_GRAPH_BASE}/${videoId}`,
+      {
+        params: {
+          fields:
+            "id,permalink_url,short_form_video_context",
+
+          access_token:
+            accessToken,
+        },
+      }
+    );
+
+  console.log(
+    "Facebook permalink response:",
+    JSON.stringify(
+      result.data,
+      null,
+      2
+    )
+  );
+
+  publishedUrl =
+    result?.data?.permalink_url ||
+    "";
+
+} catch (error) {
+  console.log(
+    "Facebook permalink lookup warning:",
+    error?.response?.data ||
+      error.message
+  );
+}
+
+// ----------------------------------------------
+// FACEBOOK REEL FALLBACK
+// ----------------------------------------------
+
+if (!publishedUrl) {
+  publishedUrl =
+    `https://www.facebook.com/reel/${videoId}`;
+
+  console.log(
+    "Facebook Reel fallback URL:",
+    publishedUrl
+  );
+}
+
+console.log(
+  "Facebook final published URL:",
+  publishedUrl
+);
+
+    // ----------------------------------------------
+    // RETURN FACEBOOK RESULT
+    // ----------------------------------------------
+
+    return {
+      success: true,
+
+      postId:
+        videoId,
+
+      publishedUrl,
+    };
+  };
+
+const lookupPublishedUrl = async (baseUrl, postId, accessToken) => {
+  try {
+    const response = await axios.get(`${baseUrl}/${postId}`, {
+      params: { fields: "id,permalink_url,permalink", access_token: accessToken },
+    });
+    return response.data?.permalink_url || response.data?.permalink || "";
+  } catch {
+    return "";
+  }
+};
+
+const publishFacebookPhoto = async ({ content, account }) => {
+  const pageId = account.pageId || account.accountId;
+  if (!pageId || !account.accessToken || !content?.media?.url) {
+    throw new Error("Facebook Page, access token, or image is missing.");
+  }
+  try {
+    const response = await axios.post(`${META_GRAPH_BASE}/${pageId}/photos`, null, {
+      params: {
+        url: content.media.url,
+        caption: content.caption || "",
+        access_token: account.accessToken,
+      },
+    });
+    const postId = response.data?.post_id || response.data?.id;
+    if (!postId) throw new Error("Facebook did not return a photo post ID.");
+    return {
+      success: true,
+      postId,
+      publishedUrl: await lookupPublishedUrl(META_GRAPH_BASE, postId, account.accessToken),
+    };
+  } catch (error) {
+    throw formatMetaError(error, "Facebook photo post failed");
+  }
+};
+
+const publishFacebookText = async ({ content, account }) => {
+  const pageId = account.pageId || account.accountId;
+  if (!pageId || !account.accessToken || !content?.caption?.trim()) {
+    throw new Error("A Facebook Page, access token, and caption are required.");
+  }
+  try {
+    const response = await axios.post(`${META_GRAPH_BASE}/${pageId}/feed`, null, {
+      params: { message: content.caption, access_token: account.accessToken },
+    });
+    const postId = response.data?.id;
+    if (!postId) throw new Error("Facebook did not return a post ID.");
+    return {
+      success: true,
+      postId,
+      publishedUrl: await lookupPublishedUrl(META_GRAPH_BASE, postId, account.accessToken),
+    };
+  } catch (error) {
+    throw formatMetaError(error, "Facebook text post failed");
+  }
+};
+
+// ======================================================
+// INSTAGRAM REEL
+// ======================================================
+
+const publishInstagramReel =
+  async ({
+    content,
+    account,
+  }) => {
+    const instagramAccountId =
+      account.instagramAccountId ||
+      account.accountId;
+
+    const accessToken =
+      account.accessToken;
+
+    const videoUrl =
+      content?.media?.url;
+
+    if (!videoUrl) {
+      throw new Error(
+        "Reel video URL is missing."
+      );
+    }
+
+    if (!instagramAccountId) {
+      throw new Error(
+        "Instagram account ID is missing."
+      );
+    }
+
+    if (!accessToken) {
+      throw new Error(
+        "Instagram access token is missing."
+      );
+    }
+
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      "Publishing Instagram Reel..."
+    );
+
+    console.log(
+      "Instagram Account ID:",
+      instagramAccountId
+    );
+
+    console.log(
+      "Video URL:",
+      videoUrl
+    );
+
+    console.log(
+      "======================================"
+    );
+
+    // ----------------------------------------------
+    // VERIFY ACCOUNT
+    // ----------------------------------------------
+
+    await verifyInstagramAccount({
+      instagramAccountId,
+      accessToken,
+    });
+
+    // ----------------------------------------------
+    // CREATE REEL CONTAINER
+    // ----------------------------------------------
+
+    let containerResponse;
+
+    try {
+      containerResponse =
+        await axios.post(
+          `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
+          null,
+          {
+            params: {
+              media_type:
+                "REELS",
+
+              video_url:
+                videoUrl,
+
+              caption:
+                content.caption || "",
+
+              access_token:
+                accessToken,
+            },
+          }
+        );
+    } catch (error) {
+      throw formatMetaError(
+        error,
+        "Instagram Reel container creation failed"
+      );
+    }
+
+    const creationId =
+      containerResponse?.data?.id;
+
+    if (!creationId) {
+      throw new Error(
+        "Instagram did not return creation ID."
+      );
+    }
+
+    console.log(
+      "Instagram container created:",
+      creationId
+    );
+
+    // ----------------------------------------------
+    // WAIT FOR VIDEO PROCESSING
+    // ----------------------------------------------
+
+    let finalStatus = "";
+
+    for (
+      let attempt = 1;
+      attempt <= 18;
+      attempt++
+    ) {
+      await sleep(5000);
+
+      try {
+        const statusResponse =
+          await axios.get(
+            `${INSTAGRAM_GRAPH_BASE}/${creationId}`,
+            {
+              params: {
+                fields:
+                  "id,status_code,status",
+
+                access_token:
+                  accessToken,
+              },
+            }
+          );
+
+        finalStatus =
+          statusResponse?.data
+            ?.status_code ||
+          statusResponse?.data
+            ?.status ||
+          "";
+
+        console.log(
+          `Instagram processing attempt ${attempt}:`,
+          finalStatus
+        );
+
+        const normalizedStatus =
+          String(finalStatus)
+            .toUpperCase();
+
+        if (
+          normalizedStatus.includes(
+            "ERROR"
+          )
+        ) {
+          throw new Error(
+            `Instagram Reel processing failed: ${finalStatus}`
+          );
+        }
+
+        if (
+          normalizedStatus.includes(
+            "FINISHED"
+          )
+        ) {
+          break;
+        }
+      } catch (error) {
+        if (
+          error.message?.includes(
+            "Instagram Reel processing failed"
+          )
+        ) {
+          throw error;
+        }
+
+        console.log(
+          "Instagram status check warning:",
+          error.message
+        );
+      }
+    }
+
+    if (
+      !String(finalStatus)
+        .toUpperCase()
+        .includes("FINISHED")
+    ) {
+      throw new Error(
+        "Instagram Reel video processing did not finish in the expected time."
+      );
+    }
+
+    // ----------------------------------------------
+    // PUBLISH
+    // ----------------------------------------------
+
+    let publishResponse;
+
+    try {
+      publishResponse =
+        await axios.post(
+          `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media_publish`,
+          null,
+          {
+            params: {
+              creation_id:
+                creationId,
+
+              access_token:
+                accessToken,
+            },
+          }
+        );
+    } catch (error) {
+      throw formatMetaError(
+        error,
+        "Instagram Reel publish failed"
+      );
+    }
+
+    const mediaId =
+      publishResponse?.data?.id;
+
+    if (!mediaId) {
+      throw new Error(
+        "Instagram did not return published media ID."
+      );
+    }
+
+    console.log(
+      "Instagram Reel published:",
+      mediaId
+    );
+
+    // ----------------------------------------------
+    // GET INSTAGRAM PERMALINK
+    // ----------------------------------------------
+
+    let publishedUrl = "";
+
+    try {
+      const permalinkResponse =
+        await axios.get(
+          `${INSTAGRAM_GRAPH_BASE}/${mediaId}`,
+          {
+            params: {
+              fields:
+                "id,permalink",
+
+              access_token:
+                accessToken,
+            },
+          }
+        );
+
+      publishedUrl =
+        permalinkResponse?.data
+          ?.permalink ||
+        "";
+
+      console.log(
+        "Instagram permalink response:",
+        JSON.stringify(
+          permalinkResponse.data,
+          null,
+          2
+        )
+      );
+
+    } catch (error) {
+      console.log(
+        "Instagram permalink lookup warning:",
+        error?.response?.data ||
+          error.message
+      );
+    }
+
+    // ----------------------------------------------
+    // RETURN INSTAGRAM RESULT
+    // ----------------------------------------------
+
+    return {
+      success: true,
+
+      postId:
+        mediaId,
+
+      publishedUrl,
+    };
+  };
+
+const waitForInstagramContainer = async ({
+  creationId,
+  accessToken,
+  mediaLabel,
+}) => {
+  let finalStatus = "";
+
+  for (let attempt = 1; attempt <= 15; attempt++) {
+    await sleep(2000);
+
+    try {
+      const response = await axios.get(
+        `${INSTAGRAM_GRAPH_BASE}/${creationId}`,
+        {
+          params: {
+            fields: "id,status_code,status",
+            access_token: accessToken,
+          },
+        }
+      );
+
+      finalStatus = response.data?.status_code || response.data?.status || "";
+      const normalizedStatus = String(finalStatus).toUpperCase();
+
+      console.log(
+        `Instagram ${mediaLabel} processing attempt ${attempt}:`,
+        finalStatus
+      );
+
+      if (normalizedStatus.includes("FINISHED")) {
+        return;
+      }
+
+      if (normalizedStatus.includes("ERROR")) {
+        throw new Error(`Instagram ${mediaLabel} processing failed: ${finalStatus}`);
+      }
+    } catch (error) {
+      if (error.message?.includes("processing failed")) {
+        throw error;
+      }
+
+      console.log(`Instagram ${mediaLabel} status check warning:`, error.message);
+    }
+  }
+
+  throw new Error(
+    `Instagram ${mediaLabel} processing did not finish in the expected time.`
+  );
+};
+
+const isInstagramMediaNotReady = (error) =>
+  error?.response?.data?.error?.code === 9007 ||
+  error?.response?.data?.error?.error_subcode === 2207027;
+
+const publishInstagramPhoto = async ({ content, account }) => {
+  const instagramAccountId = account.instagramAccountId || account.accountId;
+  const accessToken = account.accessToken;
+  if (!instagramAccountId || !accessToken || !content?.media?.url) {
+    throw new Error("Instagram account, access token, or image is missing.");
+  }
+  await verifyInstagramAccount({ instagramAccountId, accessToken });
+  let containerResponse;
+  try {
+    containerResponse = await axios.post(
+      `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
+      null,
+      { params: { image_url: content.media.url, caption: content.caption || "", access_token: accessToken } }
+    );
+  } catch (error) {
+    throw formatMetaError(error, "Instagram photo container creation failed");
+  }
+  const creationId = containerResponse.data?.id;
+  if (!creationId) throw new Error("Instagram did not return a photo container ID.");
+  await waitForInstagramContainer({
+    creationId,
+    accessToken,
+    mediaLabel: "photo",
+  });
+
+  let publishResponse = null;
+  let lastPublishError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      publishResponse = await axios.post(
+        `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media_publish`,
+        null,
+        { params: { creation_id: creationId, access_token: accessToken } }
+      );
+      break;
+    } catch (error) {
+      lastPublishError = error;
+      if (!isInstagramMediaNotReady(error) || attempt === 3) {
+        throw formatMetaError(error, "Instagram photo publish failed");
+      }
+
+      console.log(`Instagram photo is not ready yet; retrying publish (${attempt}/3).`);
+      await sleep(3000);
+    }
+  }
+  if (!publishResponse && lastPublishError) throw formatMetaError(lastPublishError, "Instagram photo publish failed");
+  const postId = publishResponse.data?.id;
+  if (!postId) throw new Error("Instagram did not return a published media ID.");
+  return {
+    success: true,
+    postId,
+    publishedUrl: await lookupPublishedUrl(INSTAGRAM_GRAPH_BASE, postId, accessToken),
+  };
+};
+
+// ======================================================
+// TIKTOK
+// ======================================================
+
+const publishTikTok =
+  async () => {
+    throw new Error(
+      "TikTok publishing API is not connected yet."
+    );
+  };
+
+// ======================================================
+// PUBLISH PLATFORM
+// ======================================================
+
+const publishToPlatform =
+  async ({
+    platform,
+    content,
+  }) => {
+    if (
+      platform === "facebook"
+    ) {
+      const {
+        account,
+      } =
+        await getFacebookAccount();
+
+      if (content?.media?.resourceType === "video" || content?.type === "reel") {
+        return publishFacebookReel({ content, account });
+      }
+      if (content?.media?.url && content?.media?.resourceType !== "video") {
+        return publishFacebookPhoto({ content, account });
+      }
+      return publishFacebookText({ content, account });
+    }
+
+    if (
+      platform === "instagram"
+    ) {
+      const {
+        account,
+      } =
+        await getInstagramAccount();
+
+      if (content?.media?.resourceType === "video" || content?.type === "reel") {
+        return publishInstagramReel({ content, account });
+      }
+      if (content?.media?.url && content?.media?.resourceType !== "video") {
+        return publishInstagramPhoto({ content, account });
+      }
+      throw new Error("Instagram publishing requires an uploaded image or video Reel.");
+    }
+
+    if (
+      platform === "tiktok"
+    ) {
+      return publishTikTok();
+    }
+
+    throw new Error(
+      `Unsupported platform: ${platform}`
+    );
+  };
+
+// ======================================================
+// DELETE FACEBOOK OLD POST
+// ======================================================
+
+const deleteFacebookPost =
+  async ({
+    postId,
+    account,
+  }) => {
+    if (!postId) {
+      return {
+        success: true,
+        skipped: true,
+        message:
+          "No previous Facebook post.",
+      };
+    }
+
+    try {
+      await axios.delete(
+        `${META_GRAPH_BASE}/${postId}`,
+        {
+          params: {
+            access_token:
+              account.accessToken,
+          },
+        }
+      );
+
+      return {
+        success: true,
+        skipped: false,
+        message:
+          "Previous Facebook post deleted.",
+      };
+    } catch (error) {
+      const code =
+        error?.response?.data
+          ?.error?.code;
+
+      if (code === 33) {
+        return {
+          success: true,
+          skipped: false,
+          message:
+            "Previous Facebook post was already unavailable.",
+        };
+      }
+
+      return {
+        success: false,
+        skipped: false,
+        message:
+          formatMetaError(
+            error,
+            "Facebook previous post deletion failed"
+          ).message,
+      };
+    }
+  };
+
+// ======================================================
+// DELETE INSTAGRAM OLD REEL
+// ======================================================
+
+const deleteInstagramPost =
+  async ({
+    postId,
+    account,
+  }) => {
+    if (!postId) {
+      return {
+        success: true,
+        skipped: true,
+        message:
+          "No previous Instagram Reel.",
+      };
+    }
+
+    if (!account?.accessToken) {
+      return {
+        success: false,
+        skipped: false,
+        message:
+          "Instagram access token is missing.",
+      };
+    }
+
+    try {
+      console.log(
+        "Deleting previous Instagram Reel:",
+        postId
+      );
+
+      await axios.delete(
+        `${META_GRAPH_BASE}/${postId}`,
+        {
+          params: {
+            access_token:
+              account.accessToken,
+          },
+        }
+      );
+
+      console.log(
+        "Previous Instagram Reel deleted:",
+        postId
+      );
+
+      return {
+        success: true,
+        skipped: false,
+        message:
+          "Previous Instagram Reel deleted successfully.",
+      };
+    } catch (error) {
+      const metaError =
+        error?.response?.data
+          ?.error;
+
+      const code =
+        metaError?.code;
+
+      const message =
+        metaError?.message ||
+        error.message;
+
+      if (code === 33) {
+        return {
+          success: true,
+          skipped: false,
+          message:
+            "Previous Instagram Reel was already unavailable.",
+        };
+      }
+
+      return {
+        success: false,
+        skipped: false,
+        message:
+          `Instagram previous Reel deletion failed: ${message}`,
+      };
+    }
+  };
+
+// ======================================================
+// DELETE OLD PLATFORM POST
+// ======================================================
+
+const deletePreviousPublishedPost = async ({
+  platform,
+  postId,
+}) => {
+  if (!postId) {
+    return {
+      success: true,
+      skipped: true,
+      message: "No previous post found.",
+    };
+  }
+
+  /* ==========================================
+     FACEBOOK
+  ========================================== */
+
+  if (platform === "facebook") {
+    try {
+      const { account } =
+        await getFacebookAccount();
+
+      await axios.delete(
+        `${META_GRAPH_BASE}/${postId}`,
+        {
+          params: {
+            access_token:
+              account.accessToken,
+          },
+        }
+      );
+
+      return {
+        success: true,
+        skipped: false,
+        message:
+          "Previous Facebook post deleted.",
+      };
+    } catch (error) {
+      const metaError =
+        error?.response?.data?.error;
+
+      /*
+        If Facebook says object does not
+        exist anymore, consider it deleted.
+      */
+
+      if (metaError?.code === 33) {
+        return {
+          success: true,
+          skipped: false,
+          message:
+            "Previous Facebook post was already deleted/unavailable.",
+        };
+      }
+
+      return {
+        success: false,
+        skipped: false,
+        message:
+          formatMetaError(
+            error,
+            "Facebook previous post deletion failed"
+          ).message,
+      };
+    }
+  }
+
+    /* ==========================================
+     INSTAGRAM
+  ========================================== */
+
+  if (platform === "instagram") {
+    if (!META_LOGIN_CONFIG_ID) {
+      return {
+        success: false,
+        skipped: false,
+        message:
+          "Instagram post deletion is not configured. Add a Facebook Login for Business config with instagram_manage_contents permission, set META_LOGIN_CONFIG_ID, then reconnect Facebook.",
+      };
+    }
+
+    try {
+      const {
+        account: facebookAccount,
+        accessToken: pageAccessToken,
+      } = await getFacebookAccount();
+
+      if (!pageAccessToken) {
+        return {
+          success: false,
+          skipped: false,
+          message:
+            "Facebook Page access token is missing. Reconnect Facebook to enable Instagram post deletion.",
+        };
+      }
+
+      console.log(
+        "======================================"
+      );
+
+      console.log(
+        "INSTAGRAM DELETE DEBUG"
+      );
+
+      console.log(
+        "Facebook Page:",
+        facebookAccount.pageName
+      );
+
+      console.log(
+        "Facebook Page Token Type:",
+        facebookAccount.tokenType
+      );
+
+      console.log(
+        "Previous Media ID:",
+        postId
+      );
+
+      console.log(
+        "Delete URL:",
+        `${META_GRAPH_BASE}/${postId}`
+      );
+
+      console.log(
+        "======================================"
+      );
+
+      await axios.delete(
+        `${META_GRAPH_BASE}/${postId}`,
+        {
+          params: {
+            access_token: pageAccessToken,
+          },
+        }
+      );
+
+      console.log(
+        "Instagram previous media DELETE request succeeded."
+      );
+
+      return {
+        success: true,
+        skipped: false,
+        message:
+          "Previous Instagram media deleted successfully.",
+      };
+
+    } catch (error) {
+      const metaError =
+        error?.response?.data?.error;
+
+      const permissionHint =
+        metaError?.code === 10 || metaError?.code === 200
+          ? " Meta denied deletion; confirm instagram_manage_contents is granted in the Facebook Login for Business config and reconnect Facebook."
+          : "";
+
+      console.error(
+        "======================================"
+      );
+
+      console.error(
+        "INSTAGRAM DELETE FAILED"
+      );
+
+      console.error(
+        "HTTP Status:",
+        error?.response?.status
+      );
+
+      console.error(
+        "Meta Error:",
+        JSON.stringify(
+          error?.response?.data,
+          null,
+          2
+        )
+      );
+
+      console.error(
+        "Message:",
+        metaError?.message ||
+          error.message
+      );
+
+      console.error(
+        "Code:",
+        metaError?.code
+      );
+
+      console.error(
+        "Subcode:",
+        metaError?.error_subcode
+      );
+
+      console.error(
+        "======================================"
+      );
+
+      return {
+        success: false,
+        skipped: false,
+        message:
+          `Instagram previous media deletion failed: ${
+            metaError?.message ||
+            error.message
+          }${
+            metaError?.code !== undefined
+              ? ` Code: ${metaError.code}.`
+              : ""
+          }${
+            metaError?.error_subcode !== undefined
+              ? ` Subcode: ${metaError.error_subcode}.`
+              : ""
+          }${permissionHint}`,
+      };
+    }
+  }
+  /* ==========================================
+     TIKTOK
+  ========================================== */
+
+  if (platform === "tiktok") {
+    return {
+      success: true,
+      skipped: true,
+      message:
+        "TikTok previous-post deletion is not connected yet.",
+    };
+  }
+
+  return {
+    success: true,
+    skipped: true,
+    message:
+      "Deletion skipped.",
+  };
+};
+  
+
+// ======================================================
+// NEXT SCHEDULE DATE
+// ======================================================
+
+const calculateNextSchedule =
+  ({
+    currentDate,
+    repeatEvery,
+  }) => {
+    const interval =
+      Number(repeatEvery);
+
+    if (
+      !Number.isInteger(interval) ||
+      interval < 1
+    ) {
+      throw new Error(
+        "Repeat interval must be at least 1 day."
+      );
+    }
+
+    const next =
+      new Date(currentDate);
+
+    next.setDate(
+      next.getDate() +
+        interval
+    );
+
+    return next;
+  };
+
+// ======================================================
+// PROCESS ONE SCHEDULE
+// ======================================================
+
+const processSchedule =
+  async (scheduleId) => {
+    // ----------------------------------------------
+    // LOCK
+    // ----------------------------------------------
+
+    const lockedSchedule =
+      await Schedule.findOneAndUpdate(
+        {
+          _id: scheduleId,
+          status: "scheduled",
+          scheduledAt: {
+            $lte: new Date(),
+          },
+        },
+        {
+          $set: {
+            status: "processing",
+            lastRunAt: new Date(),
+          },
+
+          $inc: {
+            runCount: 1,
+          },
+        },
+        {
+          new: true,
+        }
+      );
+
+    if (!lockedSchedule) {
+      return {
+        success: false,
+        message:
+          "Schedule is already processing or is not due.",
+      };
+    }
+
+    if (!lockedSchedule.retryOnlyFailed) {
+      lockedSchedule.retryRecoveryApplied = false;
+    }
+
+    try {
+      // ----------------------------------------------
+      // CONTENT
+      // ----------------------------------------------
+
+      let content =
+        await Content.findById(
+          lockedSchedule.content
+        );
+
+      if (!content) {
+        throw new Error(
+          "Scheduled content not found."
+        );
+      }
+
+      // ----------------------------------------------
+      // PRODUCT
+      // ----------------------------------------------
+
+      const product =
+        await Product.findById(
+          content.product
+        );
+
+      if (!product) {
+        throw new Error(
+          "Product for scheduled content not found."
+        );
+      }
+
+      // ----------------------------------------------
+      // PLATFORMS
+      // ----------------------------------------------
+
+      const platforms =
+        getSchedulePlatforms(
+          lockedSchedule
+        );
+
+      if (platforms.length === 0) {
+        throw new Error(
+          "No publishing platform selected."
+        );
+      }
+
+      if (platforms.includes("tiktok")) {
+        throw new Error("TikTok publishing is not configured. Remove TikTok from this schedule before it runs.");
+      }
+
+      console.log(
+        "======================================"
+      );
+
+      console.log(
+        "PROCESSING SCHEDULE:",
+        lockedSchedule._id.toString()
+      );
+
+      console.log(
+        "Run:",
+        lockedSchedule.runCount
+      );
+
+      console.log(
+        "Platforms:",
+        platforms.join(", ")
+      );
+
+      console.log(
+        "Repeat:",
+        lockedSchedule.repeatEnabled
+      );
+
+      console.log(
+        "Repeat Every:",
+        lockedSchedule.repeatEvery
+      );
+
+      console.log(
+        "Auto Delete:",
+        lockedSchedule.autoDeletePrevious
+      );
+
+      console.log(
+        "======================================"
+      );
+
+      // ----------------------------------------------
+      // FRESH CONTENT FOR REPEAT
+      // ----------------------------------------------
+
+      if (
+        lockedSchedule.repeatEnabled &&
+        lockedSchedule.generateNewContent &&
+        !lockedSchedule.retryOnlyFailed &&
+        lockedSchedule.runCount > 1
+      ) {
+        console.log(
+          "Generating fresh Reel content..."
+        );
+
+        const freshContent =
+          await generateFreshReelContent({
+            productId:
+              product._id,
+
+            platform:
+              content.platform === "all"
+                ? "all"
+                : content.platform,
+
+            createdBy:
+              lockedSchedule.createdBy,
+          });
+
+        content =
+          freshContent;
+
+        lockedSchedule.content =
+          freshContent._id;
+
+        console.log(
+          "Fresh content generated:",
+          freshContent._id.toString()
+        );
+      }
+
+      // ----------------------------------------------
+      // PUBLISH ALL PLATFORMS
+      // ----------------------------------------------
+
+      const results = [];
+
+      for (
+        const platform of platforms
+      ) {
+        console.log(
+          `Publishing to ${platform}...`
+        );
+
+        const previous =
+          Array.isArray(
+            lockedSchedule.publishedPosts
+          )
+            ? lockedSchedule.publishedPosts.find(
+                (item) =>
+                  item.platform ===
+                  platform
+              )
+            : null;
+
+        const previousPostId =
+          previous?.postId ||
+          (platform === "facebook"
+            ? lockedSchedule.previousPublishedPostId
+            : "");
+        let previousPostDeleted = false;
+
+        if (lockedSchedule.retryOnlyFailed && previous?.success) {
+          console.log(`${platform} already succeeded in this run; skipping duplicate publish during retry.`);
+          results.push(previous);
+          continue;
+        }
+
+        try {
+          // Delete first so a permission/token failure cannot create a duplicate.
+          if (
+            lockedSchedule.autoDeletePrevious &&
+            previousPostId
+          ) {
+            console.log(
+              `Deleting previous ${platform} post before publishing:`,
+              previousPostId
+            );
+
+            const deleteResult =
+              await deletePreviousPublishedPost({
+                platform,
+                postId: previousPostId,
+              });
+
+            console.log(
+              `${platform} delete result:`,
+              deleteResult.message
+            );
+
+            if (!deleteResult.success) {
+              throw new Error(
+                `Previous ${platform} post could not be deleted. New post was not published. ${deleteResult.message}`
+              );
+            }
+            previousPostDeleted = !deleteResult.skipped;
+          }
+
+          // ----------------------------------------
+          // PUBLISH AFTER PREVIOUS POST CLEANUP
+          // ----------------------------------------
+
+          const published =
+            await publishToPlatform({
+              platform,
+              content,
+            });
+
+          console.log(
+            `${platform} new post published:`,
+            published.postId
+          );
+
+          // ----------------------------------------
+          // SAVE RESULT
+          // ----------------------------------------
+
+          const result = {
+            platform,
+
+            postId:
+              published.postId ||
+              "",
+
+            publishedUrl:
+              published.publishedUrl ||
+              "",
+
+            publishedAt:
+              new Date(),
+
+            deletedPreviousPost:
+              previousPostDeleted,
+
+            deleteMessage:
+              lockedSchedule.autoDeletePrevious && previousPostId
+                ? "Previous post deleted before publishing."
+                : "",
+
+            success: true,
+
+            error: "",
+          };
+
+          results.push(
+            result
+          );
+        } catch (platformError) {
+          console.error(
+            `${platform} publish failed:`,
+            platformError.message
+          );
+
+          results.push({
+            platform,
+
+            postId: previousPostDeleted ? "" : previousPostId,
+
+            publishedUrl: "",
+
+            publishedAt: null,
+
+            deletedPreviousPost:
+              false,
+
+            deleteMessage: "",
+
+            success: false,
+
+            error:
+              platformError.message,
+          });
+        }
+      }
+
+      // ----------------------------------------------
+      // SAVE ALL RESULTS
+      // ----------------------------------------------
+
+      lockedSchedule.publishedPosts =
+        results;
+
+      const successfulResults =
+        results.filter(
+          (item) =>
+            item.success
+        );
+
+      const failedResults =
+        results.filter(
+          (item) =>
+            !item.success && !item.manualRequired
+        );
+
+      // ----------------------------------------------
+      // UPDATE LEGACY FIELDS
+      // ----------------------------------------------
+
+      const firstSuccess =
+        successfulResults[0];
+
+      if (firstSuccess) {
+        lockedSchedule.publishedPostId =
+          firstSuccess.postId ||
+          "";
+
+        lockedSchedule.publishedUrl =
+          firstSuccess.publishedUrl ||
+          "";
+
+        lockedSchedule.publishedAt =
+          firstSuccess.publishedAt;
+
+        lockedSchedule.previousPublishedPostId =
+          firstSuccess.postId ||
+          "";
+      }
+
+      // ----------------------------------------------
+      // CONTENT STATUS
+      // ----------------------------------------------
+
+      if (
+        successfulResults.length > 0
+      ) {
+        content.status =
+          "published";
+
+        for (const publishedPost of successfulResults) {
+          const existingIndex = content.publishedPosts.findIndex(
+            (item) => item.platform === publishedPost.platform
+          );
+          const savedPost = {
+            platform: publishedPost.platform,
+            postId: publishedPost.postId || "",
+            publishedUrl: publishedPost.publishedUrl || "",
+            publishedAt: publishedPost.publishedAt || new Date(),
+          };
+          if (existingIndex >= 0) {
+            content.publishedPosts[existingIndex] = savedPost;
+          } else {
+            content.publishedPosts.push(savedPost);
+          }
+        }
+
+        content.publishedPostId = firstSuccess.postId || "";
+        content.publishedUrl = firstSuccess.publishedUrl || "";
+
+        content.publishedAt =
+          new Date();
+
+        await content.save();
+      }
+
+      // ----------------------------------------------
+      // REPEAT
+      // ----------------------------------------------
+
+      if (
+        lockedSchedule.repeatEnabled &&
+        failedResults.length > 0 &&
+        Number(lockedSchedule.retryCount || 0) < 3
+      ) {
+        const retryForScheduledAt =
+          lockedSchedule.retryForScheduledAt ||
+          lockedSchedule.scheduledAt;
+        const retryAt = new Date(Date.now() + 60 * 1000);
+
+        lockedSchedule.retryOnlyFailed = true;
+        lockedSchedule.retryCount = Number(lockedSchedule.retryCount || 0) + 1;
+        lockedSchedule.retryForScheduledAt = retryForScheduledAt;
+        lockedSchedule.scheduledAt = retryAt;
+        lockedSchedule.status = "scheduled";
+        lockedSchedule.errorMessage = failedResults
+          .map((item) => `${item.platform}: ${item.error}`)
+          .join(" | ");
+
+        await lockedSchedule.save();
+
+        console.log("Retrying failed platforms without reposting successful platforms.");
+        console.log("Retry scheduled for:", retryAt);
+
+        return {
+          success: successfulResults.length > 0,
+          retrying: true,
+          nextScheduledAt: retryAt,
+          results,
+        };
+      }
+
+      if (
+        lockedSchedule.repeatEnabled &&
+        successfulResults.length > 0
+      ) {
+        const recurringFrom =
+          lockedSchedule.retryForScheduledAt ||
+          lockedSchedule.scheduledAt;
+        const nextDate =
+          calculateNextSchedule({
+            currentDate: recurringFrom,
+
+            repeatEvery:
+              lockedSchedule.repeatEvery,
+          });
+
+        lockedSchedule.scheduledAt =
+          nextDate;
+
+        lockedSchedule.status =
+          "scheduled";
+
+        lockedSchedule.retryOnlyFailed = false;
+        lockedSchedule.retryCount = 0;
+        lockedSchedule.retryForScheduledAt = null;
+        lockedSchedule.retryRecoveryApplied = failedResults.length > 0;
+
+        lockedSchedule.errorMessage =
+          failedResults.length > 0
+            ? failedResults
+                .map(
+                  (item) =>
+                    `${item.platform}: ${item.error}`
+                )
+                .join(" | ")
+            : "";
+
+        await lockedSchedule.save();
+
+        console.log(
+          "======================================"
+        );
+
+        console.log(
+          "Schedule repeated successfully."
+        );
+
+        console.log(
+          "Next scheduled time:",
+          nextDate
+        );
+
+        console.log(
+          "======================================"
+        );
+
+        return {
+          success: true,
+
+          repeated: true,
+
+          nextScheduledAt:
+            nextDate,
+
+          results,
+        };
+      }
+
+      // ----------------------------------------------
+      // FINAL STATUS
+      // ----------------------------------------------
+
+      if (
+        successfulResults.length === 0
+      ) {
+        lockedSchedule.status =
+          "failed";
+
+        lockedSchedule.errorMessage =
+          failedResults
+            .map(
+              (item) =>
+                `${item.platform}: ${item.error}`
+            )
+            .join(" | ");
+
+        await lockedSchedule.save();
+
+        return {
+          success: false,
+          results,
+        };
+      }
+
+      lockedSchedule.status =
+        "published";
+
+      lockedSchedule.errorMessage =
+        failedResults.length > 0
+          ? failedResults
+              .map(
+                (item) =>
+                  `${item.platform}: ${item.error}`
+              )
+              .join(" | ")
+          : "";
+
+      await lockedSchedule.save();
+
+      return {
+        success: true,
+        results,
+      };
+
+    } catch (error) {
+      console.error(
+        "Schedule processing error:",
+        error
+      );
+
+      await Schedule.findByIdAndUpdate(
+        scheduleId,
+        {
+          $set: {
+            status:
+              "failed",
+
+            errorMessage:
+              error.message ||
+              "Schedule processing failed.",
+          },
+        }
+      );
+
+      return {
+        success: false,
+
+        message:
+          error.message,
+      };
+    }
+  };
+
+// ======================================================
+// PROCESS DUE SCHEDULES
+// ======================================================
+
+const processDueSchedules =
+  async () => {
+    try {
+      const recoveryCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recoverableSchedules = await Schedule.find({
+        status: "scheduled",
+        repeatEnabled: true,
+        retryOnlyFailed: { $ne: true },
+        retryRecoveryApplied: { $ne: true },
+        lastRunAt: { $gte: recoveryCutoff },
+        scheduledAt: { $gt: new Date() },
+        errorMessage: { $ne: "" },
+      });
+
+      for (const schedule of recoverableSchedules) {
+        const results = schedule.publishedPosts || [];
+        const hasSuccess = results.some((item) => item.success);
+        const hasFailure = results.some((item) => !item.success);
+        if (!hasSuccess || !hasFailure) continue;
+
+        const repeatDays = Math.max(1, Number(schedule.repeatEvery || 1));
+        schedule.retryForScheduledAt = new Date(
+          schedule.scheduledAt.getTime() - repeatDays * 24 * 60 * 60 * 1000
+        );
+        schedule.retryOnlyFailed = true;
+        schedule.retryCount = 0;
+        schedule.retryRecoveryApplied = true;
+        schedule.scheduledAt = new Date(Date.now() + 30 * 1000);
+        await schedule.save();
+        console.log(
+          `Recovered failed platform(s) for schedule ${schedule._id}; retrying without reposting successful platforms.`
+        );
+      }
+
+      const staleProcessingBefore = new Date(Date.now() - 15 * 60 * 1000);
+      await Schedule.updateMany(
+        {
+          status: "processing",
+          $or: [
+            { lastRunAt: { $lte: staleProcessingBefore } },
+            { lastRunAt: null },
+          ],
+        },
+        {
+          $set: {
+            status: "scheduled",
+            errorMessage: "Recovered after interrupted schedule processing.",
+          },
+        }
+      );
+
+      const dueSchedules =
+        await Schedule.find({
+          status:
+            "scheduled",
+
+          scheduledAt: {
+            $lte: new Date(),
+          },
+        })
+          .sort({
+            scheduledAt: 1,
+          })
+          .limit(10)
+          .select("_id");
+
+      if (
+        dueSchedules.length === 0
+      ) {
+        return;
+      }
+
+      console.log(
+        `Found ${dueSchedules.length} due schedule(s).`
+      );
+
+      for (
+        const schedule of dueSchedules
+      ) {
+        await processSchedule(
+          schedule._id
+        );
+      }
+
+    } catch (error) {
+      console.error(
+        "Due schedule worker error:",
+        error.message
+      );
+    }
+  };
+
+// ======================================================
+// META ERROR FORMAT
+// ======================================================
+
+const formatMetaError =
+  (error, prefix) => {
+    const metaError =
+      error?.response?.data
+        ?.error;
+
+    if (metaError) {
+      const message =
+        metaError.message ||
+        "Unknown Meta API error.";
+
+      const code =
+        metaError.code !== undefined
+          ? ` Code: ${metaError.code}.`
+          : "";
+
+      const subcode =
+        metaError.error_subcode !==
+        undefined
+          ? ` Subcode: ${metaError.error_subcode}.`
+          : "";
+
+      return new Error(
+        `${prefix}: ${message}${code}${subcode}`
+      );
+    }
+
+    return new Error(
+      `${prefix}: ${error.message}`
+    );
+  };
+
+// ======================================================
+// EXPORTS
+// ======================================================
+
+module.exports = {
+  processDueSchedules,
+  processSchedule,
+  publishToPlatform,
+  deletePreviousPublishedPost,
+  calculateNextSchedule,
+};

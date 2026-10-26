@@ -1,0 +1,23 @@
+# Dependencies and build output
+**/node_modules/
+**/.next/
+**/out/
+**/dist/
+**/build/
+
+# Local secrets and runtime configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Deployment and local tooling
+.vercel/
+.DS_Store
+Thumbs.db
+*.log
+*.bak
+
+# Temporary media and generated output
+**/uploads/
+**/temp/
