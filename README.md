@@ -37,6 +37,18 @@ Cart2Door is a Next.js storefront and admin dashboard backed by an Express API a
 
 The local site runs at `http://localhost:3000`; the API runs at `http://localhost:5000/api`. The storefront uses the configured WhatsApp number (default `923442905070`, corresponding to `03442905070`). Update it from **Admin Dashboard → Settings** if needed.
 
+## Deploy on Netlify
+
+The repository is prepared for two Netlify sites connected to the same GitHub repository:
+
+1. Create the storefront site with **Base directory** set to `frontend`. Netlify detects Next.js and builds it with `npm run build`.
+2. Create the API site with **Base directory** set to `backend`. It deploys the Express API as a Netlify Function and checks scheduled posts every five minutes.
+3. Set `NEXT_PUBLIC_API_URL` on the storefront to `https://YOUR-API-SITE.netlify.app/api`.
+4. Set the production variables from `backend/.env.example` on the API site. Set `FRONTEND_URL` to `https://YOUR-STOREFRONT.netlify.app` (no trailing slash), and set `META_REDIRECT_URI` and `INSTAGRAM_REDIRECT_URI` to the API site's callback URLs when social publishing is enabled.
+5. Add those callback URLs in the Meta developer settings, then connect the social accounts again from the live admin dashboard.
+
+Keep the existing Vercel deployments until both Netlify sites are live and verified. The Netlify Free plan has a monthly usage cap; its functions can pause if the account reaches that cap. Serverless request-size and execution-time limits also apply, so large video uploads and long FFmpeg reel jobs may still need a different media flow or a persistent server.
+
 ## Deploy on Vercel
 
 1. Import this repository in Vercel and set **Root Directory** to `frontend`.
