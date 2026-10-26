@@ -35,11 +35,26 @@ let databaseConnectionPromise = null;
 // CORS
 // =========================
 
+const allowedOrigins = new Set(
+  [
+    process.env.FRONTEND_URL,
+    "https://trend-gadgets-storefront.netlify.app",
+    "http://localhost:3000",
+  ]
+    .filter(Boolean)
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+);
+
 app.use(
   cors({
-    origin:
-      process.env.FRONTEND_URL ||
-      "http://localhost:3000",
+    origin(origin, callback) {
+      // Requests without an Origin header are server-to-server or direct health checks.
+      const normalizedOrigin = origin?.trim().replace(/\/+$/, "");
+      if (!normalizedOrigin || allowedOrigins.has(normalizedOrigin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Origin is not allowed by CORS"));
+    },
     credentials: true,
   })
 );
