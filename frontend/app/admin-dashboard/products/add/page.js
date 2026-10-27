@@ -5,6 +5,79 @@ import { useRouter } from "next/navigation";
 import api from "../../../../lib/api";
 import { getProductCategoryList, PRODUCT_CATEGORIES } from "../../../../lib/productCategories";
 
+const MAX_UPLOAD_MEDIA_BYTES = 3.5 * 1024 * 1024;
+
+const imageFileFromBlob = (blob, originalFile) => {
+  const mimeType = blob.type || "image/webp";
+  const extension = mimeType === "image/png" ? ".png" : mimeType === "image/jpeg" ? ".jpg" : ".webp";
+  const safeName = originalFile.name.replace(/\.[^.]+$/, "") || "product-image";
+  return new File([blob], `${safeName}${extension}`, {
+    type: mimeType,
+    lastModified: originalFile.lastModified,
+  });
+};
+
+const compressImageToBudget = async (file, budgetBytes) => {
+  if (file.size <= budgetBytes) return file;
+  if (typeof createImageBitmap !== "function") {
+    throw new Error("This browser cannot optimize the selected photos. Please choose smaller images.");
+  }
+
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) {
+    bitmap.close();
+    throw new Error("Could not optimize the selected photos. Please choose smaller images.");
+  }
+
+  let bestBlob = null;
+  try {
+    for (const maxDimension of [1800, 1500, 1200, 1000]) {
+      const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+      for (const quality of [0.84, 0.74, 0.64, 0.54]) {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+        if (!blob) continue;
+        if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob;
+        if (blob.size <= budgetBytes) return imageFileFromBlob(blob, file);
+      }
+    }
+  } finally {
+    bitmap.close();
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+
+  if (bestBlob && bestBlob.size < file.size && bestBlob.size <= budgetBytes) {
+    return imageFileFromBlob(bestBlob, file);
+  }
+  throw new Error("Photos are still too large after optimization. Select fewer or smaller images.");
+};
+
+const prepareProductMedia = async (images, videos) => {
+  const videoBytes = videos.reduce((total, file) => total + file.size, 0);
+  const imageBudget = MAX_UPLOAD_MEDIA_BYTES - videoBytes;
+  if (imageBudget <= 0) {
+    throw new Error("Videos exceed the upload limit. Remove the videos or choose smaller files.");
+  }
+
+  const totalImageBytes = images.reduce((total, file) => total + file.size, 0);
+  if (totalImageBytes + videoBytes <= MAX_UPLOAD_MEDIA_BYTES) return images;
+
+  const perImageBudget = Math.floor(imageBudget / images.length);
+  const prepared = await Promise.all(images.map((file) => compressImageToBudget(file, perImageBudget)));
+  const totalPreparedBytes = prepared.reduce((total, file) => total + file.size, videoBytes);
+  if (totalPreparedBytes > MAX_UPLOAD_MEDIA_BYTES) {
+    throw new Error("Combined photos and videos are too large. Remove a video or select fewer photos.");
+  }
+  return prepared;
+};
+
 export default function AddProductPage() {
   const router = useRouter();
   const [form, setForm] = useState({ name: "", description: "", price: "", category: "", tags: "" });
@@ -38,14 +111,20 @@ export default function AddProductPage() {
     if (!form.category.trim()) { setError("Enter a product category."); return; }
     try {
       setLoading(true);
+      const preparedImages = await prepareProductMedia(images, videos);
       const data = new FormData();
       Object.entries(form).forEach(([key, value]) => data.append(key, value));
-      images.forEach((file) => data.append("images", file));
+      preparedImages.forEach((file) => data.append("images", file));
       videos.forEach((file) => data.append("videos", file));
-      const response = await api.post("/products", data, { headers: { "Content-Type": "multipart/form-data" } });
+      const response = await api.post("/products", data);
       if (response.data.success) router.push("/admin-dashboard/products");
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Unable to create product.");
+      const status = requestError.response?.status;
+      setError(
+        requestError.message === "Network Error" || status === 413
+          ? "The photos/videos are too large for this upload. Choose fewer or smaller files and try again."
+          : requestError.response?.data?.message || requestError.message || "Unable to create product."
+      );
     } finally { setLoading(false); }
   };
 
