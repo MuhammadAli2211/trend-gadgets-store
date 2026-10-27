@@ -598,7 +598,7 @@ const publishInstagramReel =
                 videoUrl,
 
               caption:
-                content.caption || "",
+                getInstagramCaption(content),
 
               access_token:
                 accessToken,
@@ -866,6 +866,15 @@ const isInstagramMediaNotReady = (error) =>
   error?.response?.data?.error?.code === 9007 ||
   error?.response?.data?.error?.error_subcode === 2207027;
 
+const getInstagramCaption = (content) => {
+  const caption = String(content?.caption || "").trim();
+  if (/link in (?:our )?bio/i.test(caption)) return caption.slice(0, 2200);
+  return [caption, "Shop through the link in our bio."]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 2200);
+};
+
 const publishInstagramPhoto = async ({ content, account }) => {
   const instagramAccountId = account.instagramAccountId || account.accountId;
   const accessToken = account.accessToken;
@@ -878,7 +887,7 @@ const publishInstagramPhoto = async ({ content, account }) => {
     containerResponse = await axios.post(
       `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
       null,
-      { params: { image_url: content.media.url, caption: content.caption || "", access_token: accessToken } }
+      { params: { image_url: content.media.url, caption: getInstagramCaption(content), access_token: accessToken } }
     );
   } catch (error) {
     throw formatMetaError(error, "Instagram photo container creation failed");
