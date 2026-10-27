@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "../../../../../lib/api";
+import { localDateTimeToIso, toLocalDateTimeInput } from "../../../../../lib/scheduleTime";
 
 export default function EditSchedulePage() {
   const params = useParams();
@@ -41,12 +42,7 @@ export default function EditSchedulePage() {
 
         const date = new Date(data.scheduledAt);
 
-        const localDate = new Date(
-          date.getTime() -
-            date.getTimezoneOffset() * 60000
-        )
-          .toISOString()
-          .slice(0, 16);
+        const localDate = toLocalDateTimeInput(date);
 
         setForm({
           scheduledAt: localDate,
@@ -132,7 +128,7 @@ export default function EditSchedulePage() {
         // IMPORTANT:
         platforms: form.platforms,
 
-        scheduledAt: form.scheduledAt,
+        scheduledAt: localDateTimeToIso(form.scheduledAt),
 
         repeatEnabled: Boolean(
           form.repeatEnabled
@@ -264,7 +260,7 @@ export default function EditSchedulePage() {
 
           <div className="mb-6">
             <label className="mb-2 block text-sm font-semibold">
-              Next Publish Date & Time
+              Next Publish Date & Time (local time)
             </label>
 
             <input
@@ -272,9 +268,7 @@ export default function EditSchedulePage() {
               name="scheduledAt"
               value={form.scheduledAt}
               onChange={handleChange}
-              min={new Date()
-                .toISOString()
-                .slice(0, 16)}
+              min={toLocalDateTimeInput(new Date())}
               className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-black"
             />
 
