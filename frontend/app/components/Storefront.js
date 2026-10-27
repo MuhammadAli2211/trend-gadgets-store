@@ -113,12 +113,20 @@ export default function Storefront() {
   const checkoutOnWhatsApp = () => {
     const phone = toWhatsAppPhone(whatsappNumber);
     if (!phone || cart.length === 0) return;
-    const orderLines = cart.map((item) => `• ${item.name} × ${item.quantity} — ${formatPrice(item.price * item.quantity)}`);
+    const orderLines = cart.map((item) => {
+      const productUrl = `${window.location.origin}/product/${item._id}`;
+      const imageUrl = item.images?.[0]?.url;
+      return [
+        `• ${item.name} × ${item.quantity} — ${formatPrice(item.price * item.quantity)}`,
+        `  Product: ${productUrl}`,
+        imageUrl ? `  Product image: ${imageUrl}` : "",
+      ].filter(Boolean).join("\n");
+    });
     const message = [
       "Assalam o Alaikum, mujhe yeh items order karne hain:",
       ...orderLines,
       `Total: ${formatPrice(cartTotal)}`,
-      `Store: ${window.location.origin}/dashboard`,
+      `Store: ${window.location.origin}`,
     ].join("\n");
     const target = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
     window.open(target, "_blank", "noopener,noreferrer");
@@ -136,7 +144,8 @@ export default function Storefront() {
       product.name,
       `Price: ${formatPrice(product.price)}`,
       `Product link: ${productUrl}`,
-    ].join("\n");
+      product.images?.[0]?.url ? `Product image: ${product.images[0].url}` : "",
+    ].filter(Boolean).join("\n");
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
     api.post("/public/tracking/whatsapp", {
       productId: product._id, source: "storefront-buy-now", platform: "website",

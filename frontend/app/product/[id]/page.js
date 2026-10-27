@@ -325,6 +325,7 @@ export default function ProductPage() {
         `Customer Name: ${customerName}\n` +
         `Phone: ${customerPhone}\n` +
         `Address: ${customerAddress}\n` +
+        `Product image: ${product.images?.[0]?.url || "Image not available"}\n` +
         `Product ID: ${product._id}`;
 
       const message =
