@@ -1,5 +1,6 @@
 
 const axios = require("axios");
+const graphApi = axios.create({ timeout: 15_000 });
 
 const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
@@ -163,7 +164,7 @@ const verifyInstagramAccount =
   }) => {
     try {
       const response =
-        await axios.get(
+        await graphApi.get(
           `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}`,
           {
             params: {
@@ -227,7 +228,7 @@ const publishFacebookReel =
 
     try {
       startResponse =
-        await axios.post(
+        await graphApi.post(
           `${META_GRAPH_BASE}/${pageId}/video_reels`,
           null,
           {
@@ -278,11 +279,12 @@ const publishFacebookReel =
 
     try {
       videoResponse =
-        await axios.get(
+        await graphApi.get(
           videoUrl,
           {
             responseType:
               "arraybuffer",
+            timeout: 180_000,
           }
         );
     } catch (error) {
@@ -301,7 +303,7 @@ const publishFacebookReel =
     // ----------------------------------------------
 
     try {
-      await axios.post(
+      await graphApi.post(
         uploadUrl,
         videoBuffer,
         {
@@ -324,6 +326,9 @@ const publishFacebookReel =
 
           maxBodyLength:
             Infinity,
+
+          timeout:
+            180_000,
         }
       );
     } catch (error) {
@@ -338,7 +343,7 @@ const publishFacebookReel =
     // ----------------------------------------------
 
     try {
-      await axios.post(
+      await graphApi.post(
         `${META_GRAPH_BASE}/${pageId}/video_reels`,
         null,
         {
@@ -386,7 +391,7 @@ try {
   );
 
   const result =
-    await axios.get(
+    await graphApi.get(
       `${META_GRAPH_BASE}/${videoId}`,
       {
         params: {
@@ -458,7 +463,7 @@ const publishFacebookVideo = async ({ content, account }) => {
   const videoUrl = content?.media?.url;
   if (!videoUrl) throw new Error("Facebook video URL is missing.");
   try {
-    const response = await axios.post(
+    const response = await graphApi.post(
       `${META_GRAPH_BASE}/${pageId}/videos`,
       null,
       { params: { file_url: videoUrl, description: content.caption || "", access_token: account.accessToken } }
@@ -477,7 +482,7 @@ const publishFacebookVideo = async ({ content, account }) => {
 
 const lookupPublishedUrl = async (baseUrl, postId, accessToken) => {
   try {
-    const response = await axios.get(`${baseUrl}/${postId}`, {
+    const response = await graphApi.get(`${baseUrl}/${postId}`, {
       params: { fields: "id,permalink_url,permalink", access_token: accessToken },
     });
     return response.data?.permalink_url || response.data?.permalink || "";
@@ -492,7 +497,7 @@ const publishFacebookPhoto = async ({ content, account }) => {
     throw new Error("Facebook Page, access token, or image is missing.");
   }
   try {
-    const response = await axios.post(`${META_GRAPH_BASE}/${pageId}/photos`, null, {
+    const response = await graphApi.post(`${META_GRAPH_BASE}/${pageId}/photos`, null, {
       params: {
         url: content.media.url,
         caption: content.caption || "",
@@ -517,7 +522,7 @@ const publishFacebookText = async ({ content, account }) => {
     throw new Error("A Facebook Page, access token, and caption are required.");
   }
   try {
-    const response = await axios.post(`${META_GRAPH_BASE}/${pageId}/feed`, null, {
+    const response = await graphApi.post(`${META_GRAPH_BASE}/${pageId}/feed`, null, {
       params: { message: content.caption, access_token: account.accessToken },
     });
     const postId = response.data?.id;
@@ -609,7 +614,7 @@ const publishInstagramReel =
 
     try {
       containerResponse =
-        await axios.post(
+        await graphApi.post(
           `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
           null,
           {
@@ -664,7 +669,7 @@ const publishInstagramReel =
 
       try {
         const statusResponse =
-          await axios.get(
+          await graphApi.get(
             `${INSTAGRAM_GRAPH_BASE}/${creationId}`,
             {
               params: {
@@ -674,6 +679,8 @@ const publishInstagramReel =
                 access_token:
                   accessToken,
               },
+
+              timeout: 8_000,
             }
           );
 
@@ -744,7 +751,7 @@ const publishInstagramReel =
 
     try {
       publishResponse =
-        await axios.post(
+        await graphApi.post(
           `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media_publish`,
           null,
           {
@@ -786,7 +793,7 @@ const publishInstagramReel =
 
     try {
       const permalinkResponse =
-        await axios.get(
+        await graphApi.get(
           `${INSTAGRAM_GRAPH_BASE}/${mediaId}`,
           {
             params: {
@@ -846,13 +853,14 @@ const waitForInstagramContainer = async ({
     await sleep(2000);
 
     try {
-      const response = await axios.get(
+      const response = await graphApi.get(
         `${INSTAGRAM_GRAPH_BASE}/${creationId}`,
         {
           params: {
             fields: "id,status_code,status",
             access_token: accessToken,
           },
+          timeout: 8_000,
         }
       );
 
@@ -907,7 +915,7 @@ const publishInstagramPhoto = async ({ content, account }) => {
   await verifyInstagramAccount({ instagramAccountId, accessToken });
   let containerResponse;
   try {
-    containerResponse = await axios.post(
+    containerResponse = await graphApi.post(
       `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
       null,
       { params: { image_url: content.media.url, caption: getInstagramCaption(content), access_token: accessToken } }
@@ -927,7 +935,7 @@ const publishInstagramPhoto = async ({ content, account }) => {
   let lastPublishError = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      publishResponse = await axios.post(
+    publishResponse = await graphApi.post(
         `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media_publish`,
         null,
         { params: { creation_id: creationId, access_token: accessToken } }
@@ -1038,7 +1046,7 @@ const deleteFacebookPost =
     }
 
     try {
-      await axios.delete(
+      await graphApi.delete(
         `${META_GRAPH_BASE}/${postId}`,
         {
           params: {
@@ -1113,7 +1121,7 @@ const deleteInstagramPost =
         postId
       );
 
-      await axios.delete(
+      await graphApi.delete(
         `${META_GRAPH_BASE}/${postId}`,
         {
           params: {
@@ -1189,7 +1197,7 @@ const deletePreviousPublishedPost = async ({
       const { account } =
         await getFacebookAccount();
 
-      await axios.delete(
+      await graphApi.delete(
         `${META_GRAPH_BASE}/${postId}`,
         {
           params: {
@@ -1296,7 +1304,7 @@ const deletePreviousPublishedPost = async ({
         "======================================"
       );
 
-      await axios.delete(
+      await graphApi.delete(
         `${META_GRAPH_BASE}/${postId}`,
         {
           params: {
@@ -1482,11 +1490,13 @@ const processSchedule =
       };
     }
 
-    if (!lockedSchedule.retryOnlyFailed) {
-      lockedSchedule.retryRecoveryApplied = false;
-    }
-
     try {
+      if (!lockedSchedule.retryOnlyFailed) {
+        lockedSchedule.retryRecoveryApplied = false;
+        lockedSchedule.currentRunStartedAt = lockedSchedule.lastRunAt;
+        await lockedSchedule.save();
+      }
+
       // ----------------------------------------------
       // CONTENT
       // ----------------------------------------------
@@ -1618,7 +1628,33 @@ const processSchedule =
       // PUBLISH ALL PLATFORMS
       // ----------------------------------------------
 
-      const results = [];
+      const previousCyclePosts = Array.isArray(lockedSchedule.publishedPosts)
+        ? lockedSchedule.publishedPosts.map((post) => post.toObject?.() || post)
+        : [];
+      const runStartedAt = new Date(
+        lockedSchedule.currentRunStartedAt || lockedSchedule.lastRunAt || Date.now()
+      );
+      const results = lockedSchedule.retryOnlyFailed
+        ? previousCyclePosts.filter((post) => {
+            const attemptedAt = post.attemptedAt || post.publishedAt;
+            return attemptedAt && new Date(attemptedAt) >= runStartedAt;
+          })
+        : [];
+
+      const savePlatformResult = async (result) => {
+        const resultIndex = results.findIndex((item) => item.platform === result.platform);
+        if (resultIndex >= 0) results[resultIndex] = result;
+        else results.push(result);
+
+        const savedPosts = Array.isArray(lockedSchedule.publishedPosts)
+          ? lockedSchedule.publishedPosts.map((post) => post.toObject?.() || post)
+          : [];
+        const savedIndex = savedPosts.findIndex((item) => item.platform === result.platform);
+        if (savedIndex >= 0) savedPosts[savedIndex] = result;
+        else savedPosts.push(result);
+        lockedSchedule.publishedPosts = savedPosts;
+        await lockedSchedule.save();
+      };
 
       for (
         const platform of platforms
@@ -1627,16 +1663,8 @@ const processSchedule =
           `Publishing to ${platform}...`
         );
 
-        const previous =
-          Array.isArray(
-            lockedSchedule.publishedPosts
-          )
-            ? lockedSchedule.publishedPosts.find(
-                (item) =>
-                  item.platform ===
-                  platform
-              )
-            : null;
+        const currentResult = results.find((item) => item.platform === platform);
+        const previous = currentResult || previousCyclePosts.find((item) => item.platform === platform) || null;
 
         const previousPostId =
           previous?.postId ||
@@ -1645,9 +1673,8 @@ const processSchedule =
             : "");
         let previousPostDeleted = false;
 
-        if (lockedSchedule.retryOnlyFailed && previous?.success) {
+        if (lockedSchedule.retryOnlyFailed && currentResult?.success) {
           console.log(`${platform} already succeeded in this run; skipping duplicate publish during retry.`);
-          results.push(previous);
           continue;
         }
 
@@ -1700,6 +1727,19 @@ const processSchedule =
               }
             : content;
 
+          await savePlatformResult({
+            platform,
+            postId: previousPostDeleted ? "" : previousPostId,
+            publishedUrl: "",
+            publishedAt: null,
+            attemptedAt: new Date(),
+            attempting: true,
+            deletedPreviousPost: previousPostDeleted,
+            deleteMessage: "",
+            success: false,
+            error: "Publishing started; waiting for the platform to confirm the result.",
+          });
+
           const published =
             await publishToPlatform({
               platform,
@@ -1729,6 +1769,12 @@ const processSchedule =
             publishedAt:
               new Date(),
 
+            attemptedAt:
+              new Date(),
+
+            attempting:
+              false,
+
             deletedPreviousPost:
               previousPostDeleted,
 
@@ -1742,16 +1788,33 @@ const processSchedule =
             error: "",
           };
 
-          results.push(
-            result
-          );
+          result.attempting = false;
+          result.attemptedAt = new Date();
+
+          await savePlatformResult(result);
+
+          content.status = "published";
+          content.publishedPosts = Array.isArray(content.publishedPosts) ? content.publishedPosts : [];
+          const contentPostIndex = content.publishedPosts.findIndex((item) => item.platform === platform);
+          const savedContentPost = {
+            platform,
+            postId: result.postId,
+            publishedUrl: result.publishedUrl,
+            publishedAt: result.publishedAt,
+          };
+          if (contentPostIndex >= 0) content.publishedPosts[contentPostIndex] = savedContentPost;
+          else content.publishedPosts.push(savedContentPost);
+          content.publishedPostId = result.postId;
+          content.publishedUrl = result.publishedUrl;
+          content.publishedAt = result.publishedAt;
+          await content.save();
         } catch (platformError) {
           console.error(
             `${platform} publish failed:`,
             platformError.message
           );
 
-          results.push({
+          await savePlatformResult({
             platform,
 
             postId: previousPostDeleted ? "" : previousPostId,
@@ -1759,6 +1822,10 @@ const processSchedule =
             publishedUrl: "",
 
             publishedAt: null,
+
+            attemptedAt: new Date(),
+
+            attempting: false,
 
             deletedPreviousPost:
               false,
@@ -2049,10 +2116,17 @@ const processDueSchedules =
       });
 
       for (const schedule of recoverableSchedules) {
-        const results = schedule.publishedPosts || [];
+        const runStartedAt = new Date(
+          schedule.currentRunStartedAt || schedule.lastRunAt || schedule.createdAt || 0
+        );
+        const results = (schedule.publishedPosts || []).filter((post) => {
+          const attemptedAt = post.attemptedAt || post.publishedAt;
+          return attemptedAt && new Date(attemptedAt) >= runStartedAt;
+        });
         const hasSuccess = results.some((item) => item.success);
-        const hasFailure = results.some((item) => !item.success);
-        if (!hasSuccess || !hasFailure) continue;
+        const successfulPlatforms = new Set(results.filter((item) => item.success).map((item) => item.platform));
+        const hasUnconfirmedPlatform = getSchedulePlatforms(schedule).some((platform) => !successfulPlatforms.has(platform));
+        if (!hasSuccess || !hasUnconfirmedPlatform) continue;
 
         const repeatDays = Math.max(1, Number(schedule.repeatEvery || 1));
         schedule.retryForScheduledAt = new Date(
@@ -2069,21 +2143,47 @@ const processDueSchedules =
       }
 
       const staleProcessingBefore = new Date(Date.now() - 15 * 60 * 1000);
-      await Schedule.updateMany(
-        {
-          status: "processing",
-          $or: [
-            { lastRunAt: { $lte: staleProcessingBefore } },
-            { lastRunAt: null },
-          ],
-        },
-        {
-          $set: {
-            status: "scheduled",
-            errorMessage: "Recovered after interrupted schedule processing.",
-          },
+      const staleProcessingSchedules = await Schedule.find({
+        status: "processing",
+        $or: [
+          { lastRunAt: { $lte: staleProcessingBefore } },
+          { lastRunAt: null },
+        ],
+      });
+
+      for (const schedule of staleProcessingSchedules) {
+        const runStartedAt = new Date(
+          schedule.currentRunStartedAt || schedule.lastRunAt || schedule.createdAt || 0
+        );
+        const currentRunResults = (schedule.publishedPosts || []).filter((post) => {
+          const attemptedAt = post.attemptedAt || post.publishedAt;
+          return attemptedAt && new Date(attemptedAt) >= runStartedAt;
+        });
+        const uncertainResult = currentRunResults.find((post) => post.attempting);
+
+        if (uncertainResult) {
+          schedule.status = "failed";
+          schedule.errorMessage = `${uncertainResult.platform} publishing was interrupted before the platform confirmed the result. Check the social page before retrying to avoid a duplicate post.`;
+          await schedule.save();
+          continue;
         }
-      );
+
+        if (currentRunResults.length === 0) {
+          schedule.status = "failed";
+          schedule.errorMessage = "Publishing was interrupted before any platform result was saved. Check Facebook and Instagram before retrying to avoid duplicate posts.";
+          await schedule.save();
+          continue;
+        }
+
+        schedule.retryOnlyFailed = true;
+        schedule.retryCount = 0;
+        schedule.retryForScheduledAt = schedule.retryForScheduledAt || schedule.scheduledAt;
+        schedule.retryRecoveryApplied = true;
+        schedule.scheduledAt = new Date(Date.now() + 30 * 1000);
+        schedule.status = "scheduled";
+        schedule.errorMessage = "Recovered after interrupted publishing; only platforms without a confirmed result will retry.";
+        await schedule.save();
+      }
 
       const dueSchedules =
         await Schedule.find({

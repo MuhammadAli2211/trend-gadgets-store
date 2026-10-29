@@ -23,6 +23,16 @@ const publishedPostSchema = new mongoose.Schema(
       default: null,
     },
 
+    attemptedAt: {
+      type: Date,
+      default: null,
+    },
+
+    attempting: {
+      type: Boolean,
+      default: false,
+    },
+
     deletedPreviousPost: {
       type: Boolean,
       default: false,
@@ -184,6 +194,11 @@ const scheduleSchema = new mongoose.Schema(
     },
 
     lastRunAt: {
+      type: Date,
+      default: null,
+    },
+
+    currentRunStartedAt: {
       type: Date,
       default: null,
     },

@@ -137,25 +137,36 @@ export default function ProductPage() {
   }, [product?._id, trackEvent]);
 
   // =========================
-  // OPEN ORDER FORM
+  // OPEN WHATSAPP ORDER
   // =========================
 
   const buyNow = () => {
     if (!product) return;
 
+    const phone = toWhatsAppPhone(whatsappSettings.whatsappNumber);
+    if (!phone) {
+      setOrderError("WhatsApp number is not configured. Please contact admin.");
+      setShowOrderForm(true);
+      return;
+    }
+
     trackEvent("click");
+    trackEvent("whatsapp");
 
-    setOrderError("");
+    const productUrl = `${window.location.origin}/product/${product._id}`;
+    const message = [
+      "Assalam o Alaikum, mujhe yeh product order karna hai:",
+      product.name,
+      `Price: Rs. ${Number(product.price || 0).toLocaleString()}`,
+      `Product link: ${productUrl}`,
+      product.images?.[0]?.url ? `Product image: ${product.images[0].url}` : "",
+    ].filter(Boolean).join("\n");
 
-    setOrderForm({
-      customerName: "",
-      customerPhone: "",
-      customerAddress: "",
-      quantity: 1,
-      notes: "",
-    });
-
-    setShowOrderForm(true);
+    window.open(
+      `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
   };
 
   // =========================
@@ -570,6 +581,8 @@ export default function ProductPage() {
             <button
               type="button"
               onClick={buyNow}
+              disabled={!whatsappSettings.whatsappNumber}
+              title={!whatsappSettings.whatsappNumber ? "WhatsApp number is not configured" : undefined}
               className="mt-8 w-full rounded-xl bg-green-600 px-6 py-4 text-lg font-bold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
             >
               Buy Now on WhatsApp
