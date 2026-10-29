@@ -1,0 +1,28 @@
+name: Process scheduled social posts
+
+on:
+  # Pakistan daytime (09:00–18:45 PKT), every 15 minutes.
+  # GitHub schedule times are UTC; Pakistan is UTC+5.
+  schedule:
+    - cron: "*/15 4-13 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  process-due-schedules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call the protected schedule worker
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "Missing GitHub Actions secret: CRON_SECRET"
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error \
+            --max-time 90 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            https://trend-gadgets-api.vercel.app/api/cron/process-schedules
