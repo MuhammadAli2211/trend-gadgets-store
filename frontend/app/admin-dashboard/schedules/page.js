@@ -11,6 +11,7 @@ const [schedules, setSchedules] = useState([]);
 const [loading, setLoading] = useState(true);
 const [refreshing, setRefreshing] = useState(false);
 const [deletingId, setDeletingId] = useState("");
+const [retryingInstagramId, setRetryingInstagramId] = useState("");
 const [error, setError] = useState("");
 
 const loadSchedules = async (showLoader = true) => {
@@ -83,6 +84,32 @@ try {
 }
 
 
+};
+
+const retryInstagramForSchedule = async (schedule) => {
+  const facebookPermalink = window.prompt(
+    "Facebook wali live Reel ka link check karein:",
+    "https://www.facebook.com/reel/1668233174885888"
+  );
+  if (!facebookPermalink) return;
+
+  try {
+    setRetryingInstagramId(schedule._id);
+    const response = await api.post(
+      `/schedules/${schedule._id}/retry-instagram`,
+      { facebookPermalink }
+    );
+    if (response.data?.success) {
+      await loadSchedules(false);
+      window.alert("Facebook post safe mark ho gayi. Ab sirf Instagram retry hoga.");
+    } else {
+      window.alert(response.data?.message || "Instagram retry queue nahi ho saki.");
+    }
+  } catch (retryError) {
+    window.alert(retryError.response?.data?.message || "Instagram retry queue nahi ho saki.");
+  } finally {
+    setRetryingInstagramId("");
+  }
 };
 
 // ====================================================
@@ -695,6 +722,14 @@ return ( <main className="min-h-screen bg-gray-100">
                     getPublishedPosts(
                       schedule
                     );
+                  const stuckSince = new Date(
+                    schedule.currentRunStartedAt || schedule.lastRunAt || 0
+                  ).getTime();
+                  const canRecoverInstagram =
+                    ["processing", "failed"].includes(schedule.status) &&
+                    stuckSince > 0 && Date.now() - stuckSince >= 15 * 60 * 1000 &&
+                    platforms.includes("facebook") && platforms.includes("instagram") &&
+                    String(schedule.content?.product?.name || "").toLowerCase().includes("super smooth 3 blade spin cutter");
 
                   return (
                     <tr
@@ -943,6 +978,16 @@ return ( <main className="min-h-screen bg-gray-100">
                               }
                             </p>
                           </div>
+                        )}
+                        {canRecoverInstagram && (
+                          <button
+                            type="button"
+                            onClick={() => retryInstagramForSchedule(schedule)}
+                            disabled={retryingInstagramId === schedule._id}
+                            className="mt-3 rounded-lg bg-pink-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                          >
+                            {retryingInstagramId === schedule._id ? "Queueing…" : "Retry Instagram only"}
+                          </button>
                         )}
                       </td>
 

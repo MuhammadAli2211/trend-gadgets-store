@@ -8,6 +8,7 @@ const {
   updateSchedule,
   cancelSchedule,
   deleteSchedule,
+  retryInstagramForSchedule,
 } = require("../controllers/scheduleController");
 
 const {
@@ -25,6 +26,9 @@ router.get("/", getSchedules);
 
 // CREATE
 router.post("/", createSchedule);
+
+// Retry Instagram only after an interrupted Facebook + Instagram publish.
+router.post("/:id/retry-instagram", retryInstagramForSchedule);
 
 // GET SINGLE
 router.get("/:id", getScheduleById);

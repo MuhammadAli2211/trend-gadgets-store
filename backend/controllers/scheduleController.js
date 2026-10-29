@@ -2,6 +2,7 @@
 const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
 const mongoose = require("mongoose");
+const axios = require("axios");
 const {
   deletePreviousPublishedPost,
 } = require("../services/publishService");
@@ -864,6 +865,174 @@ const deleteSchedule =
     }
   };
 
+const resolveFacebookReelId = async (rawUrl) => {
+  let currentUrl;
+  try {
+    currentUrl = new URL(String(rawUrl || ""));
+  } catch {
+    throw new Error("Enter a valid Facebook Reel link.");
+  }
+
+  const isFacebookHost = (hostname) =>
+    hostname === "facebook.com" || hostname.endsWith(".facebook.com") || hostname === "fb.watch";
+  const getReelIdFromUrl = (url) => {
+    const match = url.match(/\/(?:reel|videos)\/(\d+)(?:\/|$)/i);
+    if (match) return match[1];
+    const id = new URL(url).searchParams.get("v");
+    return id && /^\d+$/.test(id) ? id : "";
+  };
+
+  if (!isFacebookHost(currentUrl.hostname)) throw new Error("The link must belong to Facebook.");
+
+  for (let redirect = 0; redirect <= 5; redirect += 1) {
+    const directId = getReelIdFromUrl(currentUrl.href);
+    if (directId) return directId;
+
+    let response;
+    try {
+      response = await axios.get(currentUrl.href, {
+        maxRedirects: 0,
+        timeout: 8000,
+        responseType: "text",
+        maxContentLength: 1_000_000,
+        validateStatus: () => true,
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; TrendGadgetsAdmin/1.0)" },
+      });
+    } catch (error) {
+      throw new Error(`Facebook link could not be checked: ${error.message}`);
+    }
+
+    const location = response.headers?.location;
+    if (response.status >= 300 && response.status < 400 && location) {
+      currentUrl = new URL(location, currentUrl);
+      if (!isFacebookHost(currentUrl.hostname)) throw new Error("Facebook link redirected outside Facebook.");
+      continue;
+    }
+
+    const html = String(response.data || "").replace(/&amp;/g, "&");
+    const candidates = [
+      ...html.matchAll(/<meta[^>]+(?:property|name)=["']og:url["'][^>]+content=["']([^"']+)["']/gi),
+      ...html.matchAll(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/gi),
+    ];
+    for (const match of candidates) {
+      try {
+        const canonical = new URL(match[1], currentUrl);
+        if (isFacebookHost(canonical.hostname)) {
+          const canonicalId = getReelIdFromUrl(canonical.href);
+          if (canonicalId) return canonicalId;
+        }
+      } catch {
+        // Ignore malformed metadata and keep checking the page.
+      }
+    }
+    const escapedId = html.match(/facebook\.com\\?\/?reel\\?\/(\d+)/i)?.[1];
+    if (escapedId) return escapedId;
+    throw new Error("Could not identify the Reel from that link. Use its direct Facebook /reel/ link.");
+  }
+
+  throw new Error("Facebook link redirected too many times.");
+};
+
+const retryInstagramForSchedule = async (req, res) => {
+  try {
+    const facebookPermalink = String(req.body?.facebookPermalink || "").trim();
+    const facebookReelId = await resolveFacebookReelId(facebookPermalink);
+    const schedule = await Schedule.findById(req.params.id).populate("content");
+
+    if (!schedule || !schedule.content) {
+      return res.status(404).json({ success: false, message: "Schedule or its content was not found." });
+    }
+
+    const platforms = Array.isArray(schedule.platforms) && schedule.platforms.length
+      ? schedule.platforms
+      : [schedule.platform].filter(Boolean);
+    if (!platforms.includes("facebook") || !platforms.includes("instagram")) {
+      return res.status(400).json({ success: false, message: "This recovery is only for schedules targeting Facebook and Instagram." });
+    }
+
+    const startedAt = schedule.currentRunStartedAt || schedule.lastRunAt;
+    if (!startedAt || Date.now() - new Date(startedAt).getTime() < 15 * 60 * 1000) {
+      return res.status(409).json({ success: false, message: "This schedule may still be running. Try again after it has been stuck for 15 minutes." });
+    }
+    if (!["processing", "failed"].includes(schedule.status)) {
+      return res.status(409).json({ success: false, message: "This schedule is no longer in a recoverable state." });
+    }
+
+    const existingPosts = Array.isArray(schedule.publishedPosts)
+      ? schedule.publishedPosts.map((post) => post.toObject?.() || post)
+      : [];
+    const runStartedAt = new Date(startedAt);
+    if (existingPosts.some((post) => {
+      if (post.platform !== "instagram" || !post.success) return false;
+      const attemptedAt = post.attemptedAt || post.publishedAt;
+      return attemptedAt && new Date(attemptedAt) >= runStartedAt;
+    })) {
+      return res.status(409).json({ success: false, message: "Instagram is already marked as published. No retry was made." });
+    }
+
+    const now = new Date();
+    const originalScheduledAt = schedule.retryForScheduledAt || schedule.scheduledAt;
+    schedule.publishedPosts = [
+      ...existingPosts.filter((post) => !["facebook", "instagram"].includes(post.platform)),
+      {
+        platform: "facebook",
+        postId: facebookReelId,
+        publishedUrl: facebookPermalink,
+        publishedAt: now,
+        attemptedAt: now,
+        attempting: false,
+        success: true,
+        error: "",
+      },
+      {
+        platform: "instagram",
+        postId: "",
+        publishedUrl: "",
+        publishedAt: null,
+        attemptedAt: now,
+        attempting: false,
+        success: false,
+        error: "Instagram retry queued after confirmed Facebook Reel.",
+      },
+    ];
+    schedule.currentRunStartedAt = now;
+    schedule.lastRunAt = now;
+    schedule.retryForScheduledAt = originalScheduledAt;
+    schedule.retryOnlyFailed = true;
+    schedule.retryCount = 0;
+    schedule.retryRecoveryApplied = true;
+    schedule.scheduledAt = new Date(Date.now() + 30 * 1000);
+    schedule.status = "scheduled";
+    schedule.errorMessage = "Facebook is confirmed. Instagram only will be retried.";
+    await schedule.save();
+
+    const content = await Content.findById(schedule.content._id);
+    if (content) {
+      content.publishedPosts = (content.publishedPosts || []).filter((post) => post.platform !== "facebook");
+      content.publishedPosts.push({
+        platform: "facebook",
+        postId: facebookReelId,
+        publishedUrl: facebookPermalink,
+        publishedAt: now,
+      });
+      content.publishedPostId = facebookReelId;
+      content.publishedUrl = facebookPermalink;
+      content.publishedAt = now;
+      content.status = "published";
+      await content.save();
+    }
+
+    return res.json({
+      success: true,
+      message: "Facebook was recorded as published. Instagram only is queued for retry.",
+      scheduleId: schedule._id,
+    });
+  } catch (error) {
+    console.error("Instagram-only schedule recovery error:", error.message);
+    return res.status(400).json({ success: false, message: error.message || "Unable to retry Instagram." });
+  }
+};
+
 // ======================================================
 // EXPORT
 // ======================================================
@@ -875,4 +1044,5 @@ module.exports = {
   updateSchedule,
   cancelSchedule,
   deleteSchedule,
+  retryInstagramForSchedule,
 };
