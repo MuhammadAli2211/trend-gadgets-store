@@ -627,11 +627,11 @@ export default function ContentManagementPage() {
   // =====================================================
 
   return (
-    <main className="min-h-screen bg-gray-100">
+    <main className="min-h-screen overflow-x-hidden bg-gray-100">
       {/* HEADER */}
 
       <header className="border-b bg-white">
-        <div className="mx-auto max-w-7xl px-6 py-5">
+        <div className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-5">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
@@ -645,17 +645,17 @@ export default function ContentManagementPage() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
               <button
                 onClick={() => router.push("/admin-dashboard/content/add")}
-                className="rounded-lg border bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                className="w-full rounded-lg border bg-white px-3 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto sm:px-4"
               >
                 + Create Content
               </button>
               <button
                 onClick={refresh}
                 disabled={refreshing}
-                className="rounded-lg border bg-white px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="w-full rounded-lg border bg-white px-3 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 sm:w-auto sm:px-4"
               >
                 {refreshing
                   ? "Refreshing..."
@@ -668,7 +668,7 @@ export default function ContentManagementPage() {
                     "/admin-dashboard/schedules/add"
                   )
                 }
-                className="rounded-lg bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+              className="w-full rounded-lg bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto sm:px-5"
               >
                 + Create Schedule
               </button>
@@ -680,7 +680,7 @@ export default function ContentManagementPage() {
       {/* ERROR */}
 
       {error && (
-        <section className="mx-auto max-w-7xl px-6 pt-6">
+        <section className="mx-auto max-w-7xl px-3 pt-4 sm:px-6 sm:pt-6">
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
           </div>
@@ -689,8 +689,8 @@ export default function ContentManagementPage() {
 
       {/* STATS */}
 
-      <section className="mx-auto max-w-7xl px-6 py-6">
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <section className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
+        <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-4">
           <Stat
             title="Needs attention"
             value={counts.content}
@@ -713,8 +713,8 @@ export default function ContentManagementPage() {
 
       {/* TABS */}
 
-      <section className="mx-auto max-w-7xl px-6">
-        <div className="flex flex-wrap gap-2 rounded-xl border bg-white p-2 shadow-sm">
+      <section className="mx-auto max-w-7xl px-3 sm:px-6">
+        <div className="flex flex-nowrap gap-1 overflow-x-auto rounded-xl border bg-white p-1.5 shadow-sm sm:gap-2 sm:p-2">
           <Tab
             active={
               activeTab === "content"
@@ -773,15 +773,15 @@ export default function ContentManagementPage() {
       {/* CONTENT */}
 
       {activeTab === "content" && (
-        <section className="mx-auto max-w-7xl px-6 py-6">
+        <section className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
           <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
             <div>
               <h2 className="text-xl font-bold text-gray-900">
                 Content / Reels
               </h2>
 
-              <p className="text-sm text-gray-500">Pending work lives here. Click × to archive finished items; publishing history stays saved.</p>
-    <p className="mt-1 text-xs text-gray-500">One item per product is shown. Uploaded video is preferred; otherwise the Reel is shown.</p>
+              <p className="text-sm leading-5 text-gray-500">Pending work lives here. Click × to archive finished items; publishing history stays saved.</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">One item per product is shown. Uploaded video is preferred; otherwise the Reel is shown.</p>
             </div>
 
             <select
@@ -791,7 +791,7 @@ export default function ContentManagementPage() {
                   e.target.value
                 )
               }
-              className="rounded-lg border bg-white px-4 py-2.5 text-sm outline-none"
+              className="w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none sm:w-auto"
             >
               <option value="active">Needs attention</option>
               <option value="all">
@@ -832,29 +832,29 @@ export default function ContentManagementPage() {
             ) : filteredContents.map((content) => {
               const mediaUrl = getMediaUrl(content);
               return (
-                <article key={content._id} className="flex flex-col gap-4 rounded-2xl border bg-white p-4 shadow-sm sm:flex-row sm:items-center">
+                <article key={content._id} className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 rounded-2xl border bg-white p-3 shadow-sm sm:flex sm:items-center sm:gap-4 sm:p-4">
                   {mediaUrl ? (
                     isVideo(content) ? (
-                      <video src={mediaUrl} muted playsInline preload="metadata" className="h-20 w-full shrink-0 rounded-xl bg-black object-cover sm:w-28" />
+                      <video src={mediaUrl} muted playsInline preload="metadata" className="h-28 w-20 shrink-0 rounded-xl bg-black object-cover sm:h-20 sm:w-28" />
                     ) : (
-                      <img src={mediaUrl} alt="" className="h-20 w-full shrink-0 rounded-xl bg-gray-100 object-cover sm:w-28" />
+                      <img src={mediaUrl} alt="" className="h-28 w-20 shrink-0 rounded-xl bg-gray-100 object-cover sm:h-20 sm:w-28" />
                     )
                   ) : (
-                    <div className="flex h-20 w-full shrink-0 items-center justify-center rounded-xl bg-gray-100 text-xs text-gray-400 sm:w-28">No media</div>
+                    <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-xs text-gray-400 sm:h-20 sm:w-28">No media</div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <h3 className="truncate font-semibold text-gray-900">{getProductName(content)}</h3>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(content.status)}`}>{getStatusLabel(content.status)}</span>
                     </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-gray-600">{getCaption(content) || "No caption"}</p>
-                    <p className="mt-2 text-xs text-gray-500">
+                    <p className="mt-1 line-clamp-2 break-words text-sm text-gray-600">{getCaption(content) || "No caption"}</p>
+                    <p className="mt-2 break-words text-xs text-gray-500">
                       {content?.platform || "all"} · {content?.type || "post"}
                       {content?.product?.price !== undefined ? ` · Rs. ${content.product.price}` : ""}
                       {` · Added ${formatDate(content.createdAt)}`}
                     </p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <div className="col-span-2 flex w-full flex-wrap items-center gap-2 sm:col-span-1 sm:w-auto sm:shrink-0">
                     {["draft", "generated"].includes(content.status) && (
                       <button onClick={() => approveContent(content)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Approve</button>
                     )}
@@ -887,7 +887,7 @@ export default function ContentManagementPage() {
       )}
 
       {activeTab === "archived" && (
-        <section className="mx-auto max-w-7xl px-6 py-6">
+        <section className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
           <div className="mb-5">
             <h2 className="text-xl font-bold text-gray-900">Archive</h2>
             <p className="text-sm text-gray-500">Removed from the work list. Restore anything you still need.</p>
@@ -896,7 +896,7 @@ export default function ContentManagementPage() {
             {archivedContents.length === 0 ? (
               <div className="rounded-2xl border bg-white p-10 text-center text-gray-500">Archive is empty.</div>
             ) : archivedContents.map((content) => (
-              <article key={content._id} className="flex flex-col gap-3 rounded-2xl border bg-white p-4 sm:flex-row sm:items-center">
+              <article key={content._id} className="flex flex-col gap-3 rounded-2xl border bg-white p-3 sm:flex-row sm:items-center sm:p-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-semibold text-gray-900">{getProductName(content)}</h3>
@@ -905,7 +905,7 @@ export default function ContentManagementPage() {
                   <p className="mt-1 line-clamp-2 text-sm text-gray-600">{getCaption(content) || "No caption"}</p>
                   <p className="mt-2 text-xs text-gray-500">Archived {formatDate(content.archivedAt)}</p>
                 </div>
-                <button onClick={() => setArchived(content, false)} className="rounded-lg border px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Restore</button>
+                <button onClick={() => setArchived(content, false)} className="w-full rounded-lg border px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 sm:w-auto">Restore</button>
               </article>
             ))}
           </div>
@@ -915,7 +915,7 @@ export default function ContentManagementPage() {
       {/* PUBLISHED HISTORY */}
 
       {activeTab === "published" && (
-        <section className="mx-auto max-w-7xl px-6 py-6">
+        <section className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
           <div className="mb-5">
             <h2 className="text-xl font-bold text-gray-900">
               Published Content History
@@ -935,7 +935,26 @@ export default function ContentManagementPage() {
                 available.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="space-y-3 p-3 sm:hidden">
+                {publishedHistory.map((post, index) => (
+                  <article key={`${post.scheduleId}-${post.platform}-${index}`} className="rounded-xl border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getPlatformClass(post.platform)}`}>{post.platform}</span>
+                      <span className="text-xs text-gray-500">{formatDate(post.publishedAt)}</span>
+                    </div>
+                    <p className="mt-3 break-words font-semibold text-gray-800">{post.productName}</p>
+                    <p className="mt-1 break-all text-xs text-gray-500">{post.postId || "—"}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button onClick={() => openPublishedPost(post)} disabled={!post.publishedUrl && !post.postId} className="min-h-10 flex-1 rounded-lg bg-black px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Open Post</button>
+                      {post.content?._id && !post.content.archivedAt && (
+                        <button type="button" onClick={() => setArchived(post.content, true)} className="min-h-10 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-700">Archive</button>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto sm:block">
                 <table className="w-full min-w-[1100px]">
                   <thead className="border-b bg-gray-50">
                     <tr>
@@ -1023,6 +1042,7 @@ export default function ContentManagementPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </section>
@@ -1031,7 +1051,7 @@ export default function ContentManagementPage() {
       {/* FAILED */}
 
       {activeTab === "failed" && (
-        <section className="mx-auto max-w-7xl px-6 py-6">
+        <section className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
           <div className="mb-5">
             <h2 className="text-xl font-bold text-gray-900">
               Failed Publishing
@@ -1133,7 +1153,7 @@ export default function ContentManagementPage() {
       {/* SCHEDULE MANAGEMENT */}
 
       {activeTab === "schedules" && (
-        <section className="mx-auto max-w-7xl px-6 py-6">
+        <section className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
           <div className="mb-5 flex flex-col justify-between gap-3 md:flex-row md:items-center">
             <div>
               <h2 className="text-xl font-bold text-gray-900">
@@ -1164,7 +1184,45 @@ export default function ContentManagementPage() {
                 No schedules available.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="space-y-3 p-3 sm:hidden">
+                {visibleSchedules.map((schedule) => {
+                  const mediaUrl = getScheduleMedia(schedule);
+                  const platforms = getPlatforms(schedule);
+                  return (
+                    <article key={schedule._id} className="rounded-xl border p-3">
+                      <div className="flex gap-3">
+                        {mediaUrl ? (
+                          <video src={mediaUrl} muted playsInline preload="metadata" className="h-24 w-20 shrink-0 rounded-lg bg-black object-cover" />
+                        ) : (
+                          <div className="flex h-24 w-20 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-[10px] text-gray-400">No Media</div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <h3 className="break-words text-sm font-semibold text-gray-900">{getScheduleProductName(schedule)}</h3>
+                          <p className="mt-1 line-clamp-2 break-words text-xs text-gray-600">{schedule?.content?.caption || "No caption"}</p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {platforms.map((platform) => <span key={platform} className={`rounded-full px-2 py-1 text-[10px] font-semibold ${getPlatformClass(platform)}`}>{platform}</span>)}
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${getStatusClass(schedule.status)}`}>{getStatusLabel(schedule.status)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div><p className="text-gray-500">Next run</p><p className="mt-1 font-medium text-gray-800">{formatDate(schedule.scheduledAt)}</p></div>
+                        <div><p className="text-gray-500">Schedule</p><p className="mt-1 font-medium text-gray-800">{getRepeatText(schedule)}</p></div>
+                      </div>
+                      {schedule.errorMessage && <p className="mt-2 break-words text-xs text-red-600">{schedule.errorMessage}</p>}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {(schedule.status === "scheduled" || schedule.status === "failed") && <button onClick={() => router.push(`/admin-dashboard/schedules/edit/${schedule._id}`)} className="min-h-10 flex-1 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-700">Edit</button>}
+                        {schedule.status === "scheduled" && <button onClick={() => cancelSchedule(schedule)} className="min-h-10 flex-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white">Cancel</button>}
+                        {schedule.status === "cancelled" && <button onClick={() => deleteCancelledSchedule(schedule)} className="min-h-10 flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">Remove</button>}
+                        {schedule.status === "published" && <span className="rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-700">Published</span>}
+                        {schedule.status === "processing" && <span className="rounded-lg bg-yellow-50 px-3 py-2 text-xs font-semibold text-yellow-700">Processing...</span>}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="hidden overflow-x-auto sm:block">
                 <table className="w-full min-w-[1250px]">
                   <thead className="border-b bg-gray-50">
                     <tr>
@@ -1395,6 +1453,7 @@ export default function ContentManagementPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </section>
@@ -1413,13 +1472,13 @@ function Stat({
   danger,
 }) {
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+    <div className="rounded-xl border bg-white p-3 shadow-sm sm:p-4">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:text-xs">
         {title}
       </p>
 
       <p
-        className={`mt-1 text-2xl font-bold ${
+        className={`mt-1 text-xl font-bold sm:text-2xl ${
           danger
             ? "text-red-600"
             : "text-gray-900"
@@ -1443,7 +1502,7 @@ function Tab({
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+      className={`flex-none whitespace-nowrap rounded-lg px-3 py-2.5 text-xs font-semibold transition sm:px-4 sm:text-sm ${
         active
           ? "bg-black text-white"
           : "text-gray-600 hover:bg-gray-100"
