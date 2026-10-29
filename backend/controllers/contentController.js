@@ -7,6 +7,8 @@ const streamifier = require("streamifier");
 const { createReel } = require("../utils/reelGenerator");
 const { appendProductHashtags, createProductSocialCaption } = require("../utils/socialCaption");
 
+const reelGenerationLocks = new Set();
+
 const uploadToCloudinary = (file) => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
@@ -547,6 +549,7 @@ const generateProductReel = async (req, res) => {
   let reelData = null;
   let uploadedMedia = null;
   let contentCreated = false;
+  let generationLockKey = null;
 
   try {
     if (!mongoose.isValidObjectId(req.params.productId)) {
@@ -572,6 +575,41 @@ const generateProductReel = async (req, res) => {
       });
     }
 
+    const requestedLockKey = `${product._id}:${req.user._id}`;
+    if (reelGenerationLocks.has(requestedLockKey)) {
+      return res.status(409).json({
+        success: false,
+        message: "A Reel for this product is already being generated. Please wait.",
+      });
+    }
+    generationLockKey = requestedLockKey;
+    reelGenerationLocks.add(generationLockKey);
+
+    const reelCaption = createProductSocialCaption(product, process.env.FRONTEND_URL || "");
+    const duplicateSince = new Date(Date.now() - 60_000);
+    const findRecentReel = () => Content.findOne({
+      product: product._id,
+      type: "reel",
+      platform: "all",
+      caption: reelCaption,
+      createdBy: req.user._id,
+      status: { $nin: ["rejected"] },
+      archivedAt: null,
+      createdAt: { $gte: duplicateSince },
+    }).sort({ createdAt: -1 });
+    const existingRecentReel = await findRecentReel();
+    if (existingRecentReel) {
+      const populatedExistingReel = await Content.findById(existingRecentReel._id)
+        .populate("product", "name price category images")
+        .populate("createdBy", "name email");
+      return res.json({
+        success: true,
+        message: "A recent Reel already exists. Use that content instead of creating a duplicate.",
+        content: populatedExistingReel,
+        duplicate: true,
+      });
+    }
+
     console.log(
       `Generating reel for: ${product.name}`
     );
@@ -582,6 +620,21 @@ const generateProductReel = async (req, res) => {
       productName: product.name,
       price: product.price,
     });
+
+    // Check again after rendering so a near-simultaneous second request can
+    // reuse the first Reel instead of uploading and saving another copy.
+    const existingRenderedReel = await findRecentReel();
+    if (existingRenderedReel) {
+      const populatedExistingReel = await Content.findById(existingRenderedReel._id)
+        .populate("product", "name price category images")
+        .populate("createdBy", "name email");
+      return res.json({
+        success: true,
+        message: "A recent Reel already exists. Use that content instead of creating a duplicate.",
+        content: populatedExistingReel,
+        duplicate: true,
+      });
+    }
 
     console.log(
       "Reel generated successfully. Uploading to Cloudinary..."
@@ -599,7 +652,7 @@ const generateProductReel = async (req, res) => {
 
       platform: "all",
 
-      caption: createProductSocialCaption(product, process.env.FRONTEND_URL || ""),
+      caption: reelCaption,
 
       media: {
         url: uploaded.secure_url,
@@ -659,6 +712,9 @@ const generateProductReel = async (req, res) => {
           error.message
         );
       }
+    }
+    if (generationLockKey) {
+      reelGenerationLocks.delete(generationLockKey);
     }
   }
 };

@@ -255,15 +255,53 @@ export default function ContentManagementPage() {
   // CONTENT FILTER
   // =====================================================
 
-  const filteredContents = useMemo(() => {
-    const visible = contents.filter((item) => !item.archivedAt);
-    if (statusFilter === "active") {
-      return visible.filter((item) => item?.status !== "published");
+  const deduplicatedContents = useMemo(() => {
+    const visible = contents
+      .filter((item) => !item.archivedAt)
+      .slice()
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    const unique = [];
+    const recentReels = new Map();
+
+    for (const item of visible) {
+      if (item?.type === "reel") {
+        const productId = String(item?.product?._id || item?.product || "");
+        const duplicateKey = [
+          productId,
+          item?.platform || "all",
+          item?.status || "draft",
+          String(item?.caption || "").trim(),
+        ].join("|");
+        const createdAt = new Date(item.createdAt || 0).getTime();
+        const previousCreatedAt = recentReels.get(duplicateKey);
+
+        // Keep the newest of identical Reels accidentally created together.
+        // Separate posts and Reels, and intentional later Reels, stay visible.
+        if (
+          previousCreatedAt &&
+          Number.isFinite(createdAt) &&
+          previousCreatedAt - createdAt <= 60_000
+        ) {
+          continue;
+        }
+
+        recentReels.set(duplicateKey, createdAt);
+      }
+
+      unique.push(item);
     }
-    if (statusFilter === "all") return visible;
-    return visible.filter((item) => item?.status === statusFilter);
+
+    return unique;
+  }, [contents]);
+
+  const filteredContents = useMemo(() => {
+    if (statusFilter === "active") {
+      return deduplicatedContents.filter((item) => item?.status !== "published");
+    }
+    if (statusFilter === "all") return deduplicatedContents;
+    return deduplicatedContents.filter((item) => item?.status === statusFilter);
   }, [
-    contents,
+    deduplicatedContents,
     statusFilter,
   ]);
 
@@ -416,7 +454,7 @@ export default function ContentManagementPage() {
   const counts = useMemo(() => {
     return {
       content:
-        contents.filter((item) => !item.archivedAt && item.status !== "published").length,
+        deduplicatedContents.filter((item) => item.status !== "published").length,
       scheduled:
         schedules.filter(
           (item) =>
@@ -429,7 +467,7 @@ export default function ContentManagementPage() {
         failedHistory.length,
     };
   }, [
-    contents,
+    deduplicatedContents,
     schedules,
     publishedHistory,
     failedHistory,
