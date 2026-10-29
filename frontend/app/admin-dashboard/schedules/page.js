@@ -727,7 +727,8 @@ return ( <main className="min-h-screen bg-gray-100">
                   ).getTime();
                   const canRecoverInstagram =
                     ["processing", "failed"].includes(schedule.status) &&
-                    stuckSince > 0 && Date.now() - stuckSince >= 15 * 60 * 1000 &&
+                    Number(schedule.runCount || 0) >= 3 &&
+                    stuckSince > 0 && Date.now() - stuckSince >= 6 * 60 * 1000 &&
                     platforms.includes("facebook") && platforms.includes("instagram") &&
                     String(schedule.content?.product?.name || "").toLowerCase().includes("super smooth 3 blade spin cutter");
 

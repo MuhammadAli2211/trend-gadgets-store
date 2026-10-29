@@ -951,8 +951,9 @@ const retryInstagramForSchedule = async (req, res) => {
     }
 
     const startedAt = schedule.currentRunStartedAt || schedule.lastRunAt;
-    if (!startedAt || Date.now() - new Date(startedAt).getTime() < 15 * 60 * 1000) {
-      return res.status(409).json({ success: false, message: "This schedule may still be running. Try again after it has been stuck for 15 minutes." });
+    const minimumStuckMs = 6 * 60 * 1000;
+    if (!startedAt || Date.now() - new Date(startedAt).getTime() < minimumStuckMs) {
+      return res.status(409).json({ success: false, message: "This schedule may still be running. Try again after it has been stuck for 6 minutes." });
     }
     if (!["processing", "failed"].includes(schedule.status)) {
       return res.status(409).json({ success: false, message: "This schedule is no longer in a recoverable state." });
