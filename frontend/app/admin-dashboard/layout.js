@@ -58,6 +58,13 @@ export default function AdminDashboardLayout({ children }) {
           </div>
         </div>
         <nav aria-label="Admin navigation" className="border-t border-gray-100">
+          {pathname !== "/admin-dashboard" && (
+            <div className="border-b border-gray-100 px-4 py-2 sm:hidden">
+              <Link href="/admin-dashboard" className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">
+                <span aria-hidden="true">←</span> Back to dashboard
+              </Link>
+            </div>
+          )}
           <div className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-3 sm:px-5">
             {navigation.map(({ href, label, exact }) => {
               const active = exact

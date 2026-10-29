@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 
 import api from "../../../lib/api";
 import { toWhatsAppPhone } from "../../../lib/phone";
@@ -392,6 +393,7 @@ export default function ProductPage() {
     return (
       <main className="flex min-h-screen items-center justify-center">
         <div className="text-center">
+          <Link href="/dashboard" className="mb-5 inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">← Back to shop</Link>
           <div className="text-lg font-semibold">
             Loading product...
           </div>
@@ -410,8 +412,9 @@ export default function ProductPage() {
 
   if (error || !product) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
+      <main className="flex min-h-screen items-center justify-center px-4">
         <div className="text-center">
+          <Link href="/dashboard" className="mb-5 inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">← Back to shop</Link>
           <h1 className="text-2xl font-bold">
             Product Not Found
           </h1>
@@ -453,7 +456,11 @@ export default function ProductPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-6xl p-6 md:p-10">
+      <div className="mx-auto max-w-6xl px-3 py-4 sm:p-6 md:p-10">
+
+        <Link href="/dashboard" className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 sm:mb-6">
+          <span aria-hidden="true">←</span> Back to shop
+        </Link>
 
         <div className="grid gap-10 rounded-2xl bg-white p-6 shadow-sm md:grid-cols-2">
 
