@@ -216,6 +216,22 @@ const createImageClip = (
   });
 };
 
+const createVideoClip = (videoPath, overlayPath, outputPath) => new Promise((resolve, reject) => {
+  ffmpeg()
+    .input(videoPath)
+    .input(overlayPath)
+    .complexFilter([
+      { filter: "scale", options: { w: 1080, h: 1920, force_original_aspect_ratio: "increase" }, inputs: "0:v", outputs: "scaled" },
+      { filter: "crop", options: { w: 1080, h: 1920, x: "(iw-ow)/2", y: "(ih-oh)/2" }, inputs: "scaled", outputs: "portrait" },
+      { filter: "overlay", options: { x: 0, y: 0 }, inputs: ["portrait", "1:v"], outputs: "final" },
+    ])
+    .outputOptions(["-map [final]", "-t 3", "-r 30", "-c:v libx264", "-pix_fmt yuv420p", "-an", "-movflags +faststart"])
+    .output(outputPath)
+    .on("end", resolve)
+    .on("error", reject)
+    .run();
+});
+
 /*
 |--------------------------------------------------------------------------
 | Create Automatic Background Music
@@ -239,123 +255,43 @@ const createBackgroundAudio = (
   outputPath,
   duration
 ) => {
-  return new Promise((resolve, reject) => {
-    console.log(
-      "Creating automatic background music..."
+  // Build a small PCM WAV locally so this works with ffmpeg-static builds
+  // that do not include the optional lavfi input device.
+  const sampleRate = 44100;
+  const channels = 2;
+  const sampleCount = Math.ceil(sampleRate * duration);
+  const dataSize = sampleCount * channels * 2;
+  const wav = Buffer.alloc(44 + dataSize);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(36 + dataSize, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(channels, 22);
+  wav.writeUInt32LE(sampleRate, 24);
+  wav.writeUInt32LE(sampleRate * channels * 2, 28);
+  wav.writeUInt16LE(channels * 2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(dataSize, 40);
+  for (let frame = 0; frame < sampleCount; frame += 1) {
+    const time = frame / sampleRate;
+    const fadeIn = Math.min(1, time);
+    const fadeOut = Math.min(1, Math.max(0, duration - time));
+    const envelope = Math.min(fadeIn, fadeOut, 1) * 0.22;
+    const sample = Math.round(
+      envelope * (
+        Math.sin(2 * Math.PI * 110 * time) * 0.55 +
+        Math.sin(2 * Math.PI * 440 * time) * 0.3 +
+        Math.sin(2 * Math.PI * 660 * time) * 0.15
+      ) * 32767
     );
-
-    const bassInput =
-      `sine=frequency=110:sample_rate=44100`;
-
-    const melodyInput =
-      `sine=frequency=440:sample_rate=44100`;
-
-    const highInput =
-      `sine=frequency=660:sample_rate=44100`;
-
-    ffmpeg()
-      .input(bassInput)
-      .inputFormat("lavfi")
-
-      .input(melodyInput)
-      .inputFormat("lavfi")
-
-      .input(highInput)
-      .inputFormat("lavfi")
-
-      .complexFilter([
-        {
-          filter: "volume",
-          options: "0.18",
-          inputs: "0:a",
-          outputs: "bass",
-        },
-
-        {
-          filter: "volume",
-          options: "0.10",
-          inputs: "1:a",
-          outputs: "melody",
-        },
-
-        {
-          filter: "volume",
-          options: "0.05",
-          inputs: "2:a",
-          outputs: "high",
-        },
-
-        {
-          filter: "amix",
-          options: {
-            inputs: 3,
-            duration: "longest",
-            dropout_transition: 2,
-          },
-          inputs: [
-            "bass",
-            "melody",
-            "high",
-          ],
-          outputs: "mixed",
-        },
-
-        {
-          filter: "afade",
-          options: {
-            type: "in",
-            start_time: 0,
-            duration: 1,
-          },
-          inputs: "mixed",
-          outputs: "fadeIn",
-        },
-
-        {
-          filter: "afade",
-          options: {
-            type: "out",
-            start_time: Math.max(
-              0,
-              duration - 1
-            ),
-            duration: 1,
-          },
-          inputs: "fadeIn",
-          outputs: "finalAudio",
-        },
-      ])
-      .outputOptions([
-        "-map [finalAudio]",
-        `-t ${duration}`,
-        "-c:a aac",
-        "-b:a 128k",
-        "-ar 44100",
-        "-ac 2",
-      ])
-      .output(outputPath)
-      .on("start", (command) => {
-        console.log(
-          "Music FFmpeg command started."
-        );
-      })
-      .on("end", () => {
-        console.log(
-          "Automatic background music created."
-        );
-
-        resolve();
-      })
-      .on("error", (error) => {
-        console.error(
-          "Background music error:",
-          error
-        );
-
-        reject(error);
-      })
-      .run();
-  });
+    const offset = 44 + frame * channels * 2;
+    wav.writeInt16LE(sample, offset);
+    wav.writeInt16LE(sample, offset + 2);
+  }
+  fs.writeFileSync(outputPath, wav);
+  return Promise.resolve();
 };
 
 /*
@@ -471,10 +407,11 @@ const addAudioToVideo = (
 
 const createReel = async ({
   images,
+  videoUrl,
   productName,
   price,
 }) => {
-  if (!images || images.length === 0) {
+  if ((!images || images.length === 0) && !videoUrl) {
     throw new Error(
       "Product has no images."
     );
@@ -508,6 +445,15 @@ const createReel = async ({
       overlayPath
     );
 
+    if (videoUrl) {
+      const sourceVideoPath = path.join(tempDir, "product-video.mp4");
+      const videoClipPath = path.join(tempDir, "product-video-clip.mp4");
+      const response = await axios.get(videoUrl, { responseType: "arraybuffer" });
+      fs.writeFileSync(sourceVideoPath, response.data);
+      await createVideoClip(sourceVideoPath, overlayPath, videoClipPath);
+      clipFiles.push(videoClipPath);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Download + Animate Images
@@ -516,7 +462,7 @@ const createReel = async ({
 
     for (
       let i = 0;
-      i < images.length;
+      i < (images || []).length;
       i++
     ) {
       const imageUrl =
@@ -600,7 +546,7 @@ const createReel = async ({
 
     const audioPath = path.join(
       tempDir,
-      "background-music.m4a"
+      "background-music.wav"
     );
 
     await createBackgroundAudio(

@@ -3,6 +3,7 @@ const express = require("express");
 const upload = require("../config/contentMulter");
 
 const {
+  createProductUploadSignature,
   createProduct,
   getProducts,
   getProduct,
@@ -24,6 +25,8 @@ router.use(adminOnly);
 router.get("/", getProducts);
 
 router.get("/:id", getProduct);
+
+router.post("/upload-signature", express.json(), createProductUploadSignature);
 
 router.post(
   "/",

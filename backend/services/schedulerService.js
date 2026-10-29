@@ -343,18 +343,17 @@ const publishFacebookPost = async ({
   accessToken,
   videoUrl,
   caption,
+  isReel = true,
 }) => {
-  /*
-  For the current automation system we use the
-  Facebook Reel endpoint for generated videos.
-  */
-
-  return publishFacebookReel({
-    pageId,
-    accessToken,
-    videoUrl,
-    caption,
-  });
+  if (isReel) return publishFacebookReel({ pageId, accessToken, videoUrl, caption });
+  const response = await axios.post(
+    `${GRAPH_BASE}/${pageId}/videos`,
+    null,
+    { params: { file_url: videoUrl, description: caption || "", access_token: accessToken } }
+  );
+  const videoId = response.data?.id;
+  if (!videoId) throw new Error("Facebook did not return a video ID.");
+  return { success: true, postId: videoId, publishedUrl: `https://www.facebook.com/${pageId}/videos/${videoId}` };
 };
 
 /*
@@ -488,6 +487,7 @@ const publishToPlatform = async ({
         content.media.url,
 
       caption,
+      isReel: content.type === "reel",
     });
   }
 

@@ -116,8 +116,9 @@ const generateFreshReelContent = async ({
   const product = await getProduct(productId);
 
   const images = getProductImages(product);
+  const videoUrl = product.video?.url || product.videos?.[0]?.url || "";
 
-  if (images.length === 0) {
+  if (images.length === 0 && !videoUrl) {
     throw new Error(
       `Product "${product.name}" has no images.`
     );
@@ -151,6 +152,7 @@ const generateFreshReelContent = async ({
 
   reel = await createReel({
     images,
+    videoUrl,
     productName: product.name,
     price: product.price,
   });

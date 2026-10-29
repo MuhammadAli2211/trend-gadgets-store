@@ -48,6 +48,15 @@ export default function ProductsPage() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    if (loading || products.length === 0) return;
+    const savedY = window.sessionStorage.getItem("products-list-scroll-y");
+    if (savedY !== null) {
+      window.requestAnimationFrame(() => window.scrollTo(0, Number(savedY) || 0));
+      window.sessionStorage.removeItem("products-list-scroll-y");
+    }
+  }, [loading, products]);
+
   const handleSearch = (e) => {
     e.preventDefault();
     loadProducts();
@@ -421,6 +430,7 @@ export default function ProductsPage() {
 
                             <Link
                               href={`/admin-dashboard/products/edit/${product._id}`}
+                              onClick={() => window.sessionStorage.setItem("products-list-scroll-y", String(window.scrollY))}
                               className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
                             >
                               Edit

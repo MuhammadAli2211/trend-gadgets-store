@@ -3,6 +3,7 @@ const Content = require("../models/Content");
 const Order = require("../models/Order");
 const cloudinary = require("../config/cloudinary");
 const { createProductSocialCaption } = require("../utils/socialCaption");
+const crypto = require("crypto");
 
 const streamifier = require("streamifier");
 const parseTags = (value) => {
@@ -22,6 +23,75 @@ const createSlug = (name) => {
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
+};
+
+const PRODUCT_MEDIA_FOLDER = "ecommerce-automation/products";
+
+const createProductUploadSignature = (req, res) => {
+  const resourceType = req.body?.resourceType;
+  if (resourceType !== "video") {
+    return res.status(400).json({ success: false, message: "Only product video uploads are supported here." });
+  }
+
+  const { cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret } = cloudinary.config();
+  if (!cloudName || !apiKey || !apiSecret) {
+    return res.status(503).json({ success: false, message: "Cloudinary upload is not configured on the server." });
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const publicId = `${PRODUCT_MEDIA_FOLDER}/upload-${crypto.randomUUID()}`;
+  const paramsToSign = { folder: PRODUCT_MEDIA_FOLDER, overwrite: false, public_id: publicId, timestamp };
+  const signature = cloudinary.utils.api_sign_request(paramsToSign, apiSecret);
+
+  return res.json({
+    success: true,
+    cloudName,
+    apiKey,
+    timestamp,
+    signature,
+    folder: PRODUCT_MEDIA_FOLDER,
+    publicId,
+  });
+};
+
+const parseUploadedVideoAssets = (rawAssets) => {
+  if (!rawAssets) return [];
+  const invalid = (message) => {
+    const error = new Error(message);
+    error.status = 400;
+    throw error;
+  };
+  let assets;
+  try {
+    assets = typeof rawAssets === "string" ? JSON.parse(rawAssets) : rawAssets;
+  } catch {
+    return invalid("Uploaded video details are invalid.");
+  }
+  if (!Array.isArray(assets) || assets.length > 2) {
+    return invalid("A product can have up to 2 videos.");
+  }
+
+  const cloudName = cloudinary.config().cloud_name;
+  return assets.map((asset) => {
+    const publicId = asset?.publicId;
+    let url;
+    try {
+      url = new URL(asset?.url);
+    } catch {
+      return invalid("Uploaded video details are invalid.");
+    }
+    if (
+      typeof publicId !== "string" ||
+      !new RegExp(`^${PRODUCT_MEDIA_FOLDER}/upload-[0-9a-f-]{36}$`, "i").test(publicId) ||
+      url.protocol !== "https:" ||
+      url.hostname !== "res.cloudinary.com" ||
+      !url.pathname.startsWith(`/${cloudName}/video/upload/`) ||
+      !url.pathname.includes(`/${publicId}.`)
+    ) {
+      return invalid("Uploaded video does not match a valid product upload.");
+    }
+    return { url: url.toString(), publicId };
+  });
 };
 
 // =====================================
@@ -123,6 +193,10 @@ const createProduct = async (req, res) => {
     const socialMediaFile = files.socialMedia?.[0];
     const imageFiles = [...(files.images || []), ...(files.productImage || [])];
     const videoFiles = [...(files.videos || []), ...(files.video || [])];
+    const directVideoAssets = parseUploadedVideoAssets(req.body.videoAssets);
+    if (directVideoAssets.length + videoFiles.length > 2) {
+      return res.status(400).json({ success: false, message: "A product can have up to 2 videos." });
+    }
     if (!imageFiles.length) {
       return res.status(400).json({ success: false, message: "Upload at least one product photo. You can also add videos." });
     }
@@ -134,25 +208,21 @@ const createProduct = async (req, res) => {
       const result = await uploadToCloudinary(file.buffer, "image");
       uploadedImages.push({ url: result.secure_url, publicId: result.public_id });
     }
+    uploadedVideos.push(...directVideoAssets);
     for (const file of videoFiles) {
       const result = await uploadToCloudinary(file.buffer, "video");
       uploadedVideos.push({ url: result.secure_url, publicId: result.public_id });
     }
 
-    let contentMedia = socialMediaFile;
-    if (!contentMedia) contentMedia = imageFiles[0] || videoFiles[0];
-    if (contentMedia) {
+    if (socialMediaFile) {
+      const contentMedia = socialMediaFile;
       const resourceType = contentMedia.mimetype.startsWith("video/") ? "video" : "image";
-      const imageIndex = imageFiles.indexOf(contentMedia);
-      const videoIndex = videoFiles.indexOf(contentMedia);
-      if (imageIndex >= 0) {
-        uploadedSocialMedia = { ...uploadedImages[imageIndex], resourceType };
-      } else if (videoIndex >= 0) {
-        uploadedSocialMedia = { ...uploadedVideos[videoIndex], resourceType };
-      } else {
-        const result = await uploadToCloudinary(contentMedia.buffer, resourceType);
-        uploadedSocialMedia = { url: result.secure_url, publicId: result.public_id, resourceType };
-      }
+      const result = await uploadToCloudinary(contentMedia.buffer, resourceType);
+      uploadedSocialMedia = { url: result.secure_url, publicId: result.public_id, resourceType };
+    } else if (uploadedImages.length) {
+      uploadedSocialMedia = { ...uploadedImages[0], resourceType: "image" };
+    } else if (uploadedVideos.length) {
+      uploadedSocialMedia = { ...uploadedVideos[0], resourceType: "video" };
     }
 
     let slug = createSlug(name);
@@ -218,7 +288,7 @@ const createProduct = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    res.status(error.status || 500).json({
       success: false,
       message:
         error.message || "Failed to create product",
@@ -344,6 +414,7 @@ const getProduct = async (req, res) => {
 // =====================================
 
 const updateProduct = async (req, res) => {
+  const newlyAddedDirectVideos = [];
   try {
     const { id } = req.params;
 
@@ -506,6 +577,7 @@ const updateProduct = async (req, res) => {
     const imageFiles = files.images || [];
     const videoFile = files.video?.[0];
     const uploadedVideoFiles = files.videos || [];
+    const directVideoAssets = parseUploadedVideoAssets(req.body.videoAssets);
     if (imageFiles.some((file) => !file.mimetype?.startsWith("image/")) ||
         uploadedVideoFiles.some((file) => !file.mimetype?.startsWith("video/")) ||
         (videoFile && !videoFile.mimetype?.startsWith("video/"))) {
@@ -562,6 +634,14 @@ const updateProduct = async (req, res) => {
       product.videos.push({ url: result.secure_url, publicId: result.public_id });
       if (!product.video?.url) product.video = { url: result.secure_url, publicId: result.public_id };
     }
+    if (product.videos.length + directVideoAssets.length > 2) {
+      return res.status(400).json({ success: false, message: "A product can have up to 2 videos." });
+    }
+    for (const asset of directVideoAssets) {
+      product.videos.push(asset);
+      newlyAddedDirectVideos.push(asset);
+      if (!product.video?.url) product.video = asset;
+    }
 
     if (product.images.length === 0 && !product.video?.url && !product.videos?.length) {
       return res.status(400).json({
@@ -582,12 +662,13 @@ const updateProduct = async (req, res) => {
       product,
     });
   } catch (error) {
+    await Promise.all(newlyAddedDirectVideos.map((video) => deleteFromCloudinary(video.publicId, "video")));
     console.error(
       "Update Product Error:",
       error
     );
 
-    res.status(500).json({
+    res.status(error.status || 500).json({
       success: false,
       message:
         error.message ||
@@ -707,6 +788,7 @@ const toggleProductStatus = async (
 };
 
 module.exports = {
+  createProductUploadSignature,
   createProduct,
   getProducts,
   getProduct,

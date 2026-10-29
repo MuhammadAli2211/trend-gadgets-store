@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import api from "../../../../../lib/api";
+import { uploadProductVideo } from "../../../../../lib/cloudinaryUpload";
 import { getProductCategoryList, PRODUCT_CATEGORIES } from "../../../../../lib/productCategories";
 
 export default function EditProductPage() {
@@ -28,6 +29,7 @@ export default function EditProductPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [error, setError] = useState("");
 
   // =========================
@@ -209,6 +211,16 @@ export default function EditProductPage() {
     try {
       setSaving(true);
 
+      const uploadedVideos = [];
+      for (let index = 0; index < newVideos.length; index += 1) {
+        const file = newVideos[index];
+        setUploadStatus(`Uploading video ${index + 1}/${newVideos.length}: 0%`);
+        uploadedVideos.push(await uploadProductVideo(file, (percent) => {
+          setUploadStatus(`Uploading video ${index + 1}/${newVideos.length}: ${percent}%`);
+        }));
+      }
+      setUploadStatus("Saving product details…");
+
       const formData = new FormData();
 
       formData.append(
@@ -246,7 +258,7 @@ export default function EditProductPage() {
         );
       });
       formData.append("keepVideos", JSON.stringify(existingVideos));
-      newVideos.forEach((video) => formData.append("videos", video));
+      formData.append("videoAssets", JSON.stringify(uploadedVideos));
 
       const response = await api.put(
         `/products/${productId}`,
@@ -312,11 +324,22 @@ export default function EditProductPage() {
       {/* HEADER */}
 
       <header className="border-b bg-white">
-        <div className="mx-auto max-w-4xl px-6 py-5">
+        <div className="mx-auto flex max-w-4xl items-center gap-4 px-6 py-5">
+          <button
+            type="button"
+            onClick={() => router.push("/admin-dashboard/products")}
+            aria-label="Back to products"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-xl hover:bg-gray-50"
+          >
+            ←
+          </button>
+          <div>
 
           <h1 className="text-2xl font-bold text-gray-900">
             Edit Product
           </h1>
+          <p className="mt-1 text-sm text-gray-500">Back to products</p>
+          </div>
 
           <p className="mt-1 text-sm text-gray-500">
             Update your product information.
@@ -509,10 +532,7 @@ export default function EditProductPage() {
               className="w-full rounded-lg border bg-white px-4 py-3"
             />
 
-            <p className="mt-2 text-sm text-gray-500">
-              Select new images if you want to add
-              more product photos.
-            </p>
+            <p className="mt-2 text-sm text-gray-500">Select new images if you want to add more product photos.</p>
 
             {newImages.length > 0 && (
               <p className="mt-2 text-sm font-medium text-gray-700">
@@ -528,10 +548,12 @@ export default function EditProductPage() {
             <div className="mb-3 flex flex-wrap gap-3">{existingVideos.map((video, index) => <div key={video.publicId || video.url} className="relative"><video src={video.url} controls className="h-24 rounded-lg" /><button type="button" onClick={() => setExistingVideos((items) => items.filter((_, itemIndex) => itemIndex !== index))} className="mt-1 block rounded-lg border px-3 py-1 text-xs">Remove video {index + 1}</button></div>)}</div>
             <input type="file" accept="video/mp4,video/quicktime,video/webm" multiple onChange={handleVideos} className="w-full rounded-lg border bg-white px-4 py-3" />
             {newVideos.length > 0 && <p className="mt-2 text-sm">{newVideos.length} new video(s) selected.</p>}
+            <p className="mt-2 text-xs text-gray-500">Videos upload directly to Cloudinary, so large files bypass the website server upload limit.</p>
           </div>
 
           {/* BUTTONS */}
 
+          {uploadStatus && <p role="status" className="mb-4 text-sm text-gray-600">{uploadStatus}</p>}
           <div className="flex gap-3">
 
             <button
@@ -552,7 +574,7 @@ export default function EditProductPage() {
               className="rounded-lg bg-black px-6 py-3 font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
             >
               {saving
-                ? "Updating..."
+                ? uploadStatus || "Updating..."
                 : "Update Product"}
             </button>
 

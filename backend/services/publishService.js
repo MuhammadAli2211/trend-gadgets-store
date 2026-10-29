@@ -453,6 +453,28 @@ console.log(
     };
   };
 
+const publishFacebookVideo = async ({ content, account }) => {
+  const pageId = account.pageId || account.accountId;
+  const videoUrl = content?.media?.url;
+  if (!videoUrl) throw new Error("Facebook video URL is missing.");
+  try {
+    const response = await axios.post(
+      `${META_GRAPH_BASE}/${pageId}/videos`,
+      null,
+      { params: { file_url: videoUrl, description: content.caption || "", access_token: account.accessToken } }
+    );
+    const videoId = response.data?.id;
+    if (!videoId) throw new Error("Facebook did not return a video ID.");
+    return {
+      success: true,
+      postId: videoId,
+      publishedUrl: `https://www.facebook.com/${pageId}/videos/${videoId}`,
+    };
+  } catch (error) {
+    throw formatMetaError(error, "Facebook video publish failed");
+  }
+};
+
 const lookupPublishedUrl = async (baseUrl, postId, accessToken) => {
   try {
     const response = await axios.get(`${baseUrl}/${postId}`, {
@@ -518,6 +540,7 @@ const publishInstagramReel =
   async ({
     content,
     account,
+    mediaType = "REELS",
   }) => {
     const instagramAccountId =
       account.instagramAccountId ||
@@ -592,7 +615,7 @@ const publishInstagramReel =
           {
             params: {
               media_type:
-                "REELS",
+                mediaType,
 
               video_url:
                 videoUrl,
@@ -608,7 +631,7 @@ const publishInstagramReel =
     } catch (error) {
       throw formatMetaError(
         error,
-        "Instagram Reel container creation failed"
+        `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
       );
     }
 
@@ -737,7 +760,7 @@ const publishInstagramReel =
     } catch (error) {
       throw formatMetaError(
         error,
-        "Instagram Reel publish failed"
+        `Instagram ${mediaType === "REELS" ? "Reel" : "video"} publish failed`
       );
     }
 
@@ -959,6 +982,7 @@ const publishToPlatform =
         await getFacebookAccount();
 
       if (content?.media?.resourceType === "video" || content?.type === "reel") {
+        if (content?.type !== "reel") return publishFacebookVideo({ content, account });
         return publishFacebookReel({ content, account });
       }
       if (content?.media?.url && content?.media?.resourceType !== "video") {
@@ -976,7 +1000,7 @@ const publishToPlatform =
         await getInstagramAccount();
 
       if (content?.media?.resourceType === "video" || content?.type === "reel") {
-        return publishInstagramReel({ content, account });
+        return publishInstagramReel({ content, account, mediaType: content?.type === "reel" ? "REELS" : "VIDEO" });
       }
       if (content?.media?.url && content?.media?.resourceType !== "video") {
         return publishInstagramPhoto({ content, account });
@@ -1661,10 +1685,25 @@ const processSchedule =
           // PUBLISH AFTER PREVIOUS POST CLEANUP
           // ----------------------------------------
 
+          // A product's uploaded video is the preferred scheduled media.
+          // Use the generated Reel only when the product has no saved video.
+          const productVideoUrl = product.video?.url || product.videos?.[0]?.url || "";
+          const contentToPublish = productVideoUrl && content.type === "reel"
+            ? {
+                ...content.toObject(),
+                type: "reel",
+                media: {
+                  ...(content.media?.toObject?.() || content.media || {}),
+                  url: productVideoUrl,
+                  resourceType: "video",
+                },
+              }
+            : content;
+
           const published =
             await publishToPlatform({
               platform,
-              content,
+              content: contentToPublish,
             });
 
           console.log(

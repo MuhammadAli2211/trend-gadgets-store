@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "../../../../lib/api";
+import { uploadProductVideo } from "../../../../lib/cloudinaryUpload";
 import { getProductCategoryList, PRODUCT_CATEGORIES } from "../../../../lib/productCategories";
 
 const MAX_UPLOAD_MEDIA_BYTES = 3.5 * 1024 * 1024;
@@ -59,21 +60,16 @@ const compressImageToBudget = async (file, budgetBytes) => {
   throw new Error("Photos are still too large after optimization. Select fewer or smaller images.");
 };
 
-const prepareProductMedia = async (images, videos) => {
-  const videoBytes = videos.reduce((total, file) => total + file.size, 0);
-  const imageBudget = MAX_UPLOAD_MEDIA_BYTES - videoBytes;
-  if (imageBudget <= 0) {
-    throw new Error("Videos exceed the upload limit. Remove the videos or choose smaller files.");
-  }
-
+const prepareProductImages = async (images) => {
+  const imageBudget = MAX_UPLOAD_MEDIA_BYTES;
   const totalImageBytes = images.reduce((total, file) => total + file.size, 0);
-  if (totalImageBytes + videoBytes <= MAX_UPLOAD_MEDIA_BYTES) return images;
+  if (totalImageBytes <= imageBudget) return images;
 
   const perImageBudget = Math.floor(imageBudget / images.length);
   const prepared = await Promise.all(images.map((file) => compressImageToBudget(file, perImageBudget)));
-  const totalPreparedBytes = prepared.reduce((total, file) => total + file.size, videoBytes);
-  if (totalPreparedBytes > MAX_UPLOAD_MEDIA_BYTES) {
-    throw new Error("Combined photos and videos are too large. Remove a video or select fewer photos.");
+  const totalPreparedBytes = prepared.reduce((total, file) => total + file.size, 0);
+  if (totalPreparedBytes > imageBudget) {
+    throw new Error("Photos are still too large. Remove a photo or choose smaller images.");
   }
   return prepared;
 };
@@ -85,6 +81,7 @@ export default function AddProductPage() {
   const [videos, setVideos] = useState([]);
   const [categories, setCategories] = useState(PRODUCT_CATEGORIES);
   const [loading, setLoading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -111,11 +108,20 @@ export default function AddProductPage() {
     if (!form.category.trim()) { setError("Enter a product category."); return; }
     try {
       setLoading(true);
-      const preparedImages = await prepareProductMedia(images, videos);
+      const preparedImages = await prepareProductImages(images);
+      const uploadedVideos = [];
+      for (let index = 0; index < videos.length; index += 1) {
+        const file = videos[index];
+        setUploadStatus(`Uploading video ${index + 1}/${videos.length}: 0%`);
+        uploadedVideos.push(await uploadProductVideo(file, (percent) => {
+          setUploadStatus(`Uploading video ${index + 1}/${videos.length}: ${percent}%`);
+        }));
+      }
+      setUploadStatus("Saving product details…");
       const data = new FormData();
       Object.entries(form).forEach(([key, value]) => data.append(key, value));
       preparedImages.forEach((file) => data.append("images", file));
-      videos.forEach((file) => data.append("videos", file));
+      data.append("videoAssets", JSON.stringify(uploadedVideos));
       const response = await api.post("/products", data);
       if (response.data.success) router.push("/admin-dashboard/products");
     } catch (requestError) {
@@ -143,9 +149,10 @@ export default function AddProductPage() {
             <label className="block text-sm font-semibold">Product photos (up to 8)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImages} className="mt-2 block w-full rounded-lg border bg-white px-4 py-3 font-normal" /></label>
             {images.length > 0 && <p className="text-xs text-gray-500">{images.length} photo(s) selected. The first photo appears on the product card.</p>}
             <label className="block text-sm font-semibold">Product videos (up to 2)<input type="file" accept="video/mp4,video/quicktime,video/webm" multiple onChange={handleVideos} className="mt-2 block w-full rounded-lg border bg-white px-4 py-3 font-normal" /></label>
-            {videos.length > 0 && <p className="text-xs text-gray-500">{videos.length} video(s) selected. All media appears on the product details page.</p>}
+            {videos.length > 0 && <p className="text-xs text-gray-500">{videos.length} video(s) selected. Videos upload directly to Cloudinary, including large files, then appear on the product details page.</p>}
           </div>
-          <div className="flex gap-3"><button type="button" onClick={() => router.push("/admin-dashboard/products")} className="rounded-lg border px-5 py-3">Cancel</button><button type="submit" disabled={loading} className="rounded-lg bg-black px-6 py-3 font-semibold text-white disabled:opacity-50">{loading ? "Creating…" : "Create Product"}</button></div>
+          {uploadStatus && <p role="status" className="text-sm text-gray-600">{uploadStatus}</p>}
+          <div className="flex gap-3"><button type="button" onClick={() => router.push("/admin-dashboard/products")} className="rounded-lg border px-5 py-3">Cancel</button><button type="submit" disabled={loading} className="rounded-lg bg-black px-6 py-3 font-semibold text-white disabled:opacity-50">{loading ? uploadStatus || "Creating…" : "Create Product"}</button></div>
         </form>
       </section>
     </main>

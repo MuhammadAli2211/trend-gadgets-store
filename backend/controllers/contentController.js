@@ -563,14 +563,12 @@ const generateProductReel = async (req, res) => {
       });
     }
 
-    if (
-      !product.images ||
-      product.images.length === 0
-    ) {
+    const productVideoUrl = product.video?.url || product.videos?.[0]?.url || "";
+    if ((!product.images || product.images.length === 0) && !productVideoUrl) {
       return res.status(400).json({
         success: false,
         message:
-          "This product does not have any images.",
+          "This product needs at least one image or video to generate a Reel.",
       });
     }
 
@@ -580,6 +578,7 @@ const generateProductReel = async (req, res) => {
 
     reelData = await createReel({
       images: product.images,
+      videoUrl: productVideoUrl,
       productName: product.name,
       price: product.price,
     });
