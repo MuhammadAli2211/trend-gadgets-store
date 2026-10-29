@@ -5,6 +5,38 @@ import { useRouter } from "next/navigation";
 
 import api from "../../../lib/api";
 
+const chooseContentPerProduct = (items) => {
+  const selected = new Map();
+  const getPriority = (item) => {
+    if (item?.type === "post" && item?.media?.resourceType === "video") return 4;
+    if (item?.type === "reel") return 3;
+    if (item?.media?.resourceType === "video") return 2;
+    if (item?.type === "post") return 1;
+    return 0;
+  };
+
+  for (const item of items) {
+    const productId = String(item?.product?._id || item?.product || item?._id);
+    const current = selected.get(productId);
+    const itemPriority = getPriority(item);
+    const currentPriority = current ? getPriority(current) : -1;
+    const itemDate = new Date(item?.createdAt || 0).getTime();
+    const currentDate = new Date(current?.createdAt || 0).getTime();
+
+    if (
+      !current ||
+      itemPriority > currentPriority ||
+      (itemPriority === currentPriority && itemDate > currentDate)
+    ) {
+      selected.set(productId, item);
+    }
+  }
+
+  return [...selected.values()].sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+  );
+};
+
 export default function ContentManagementPage() {
   const router = useRouter();
 
@@ -255,55 +287,16 @@ export default function ContentManagementPage() {
   // CONTENT FILTER
   // =====================================================
 
-  const deduplicatedContents = useMemo(() => {
-    const visible = contents
-      .filter((item) => !item.archivedAt)
-      .slice()
-      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-    const unique = [];
-    const recentReels = new Map();
-
-    for (const item of visible) {
-      if (item?.type === "reel") {
-        const productId = String(item?.product?._id || item?.product || "");
-        const duplicateKey = [
-          productId,
-          item?.platform || "all",
-          item?.status || "draft",
-          String(item?.caption || "").trim(),
-        ].join("|");
-        const createdAt = new Date(item.createdAt || 0).getTime();
-        const previousCreatedAt = recentReels.get(duplicateKey);
-
-        // Keep the newest of identical Reels accidentally created together.
-        // Separate posts and Reels, and intentional later Reels, stay visible.
-        if (
-          previousCreatedAt &&
-          Number.isFinite(createdAt) &&
-          previousCreatedAt - createdAt <= 60_000
-        ) {
-          continue;
-        }
-
-        recentReels.set(duplicateKey, createdAt);
-      }
-
-      unique.push(item);
-    }
-
-    return unique;
-  }, [contents]);
-
   const filteredContents = useMemo(() => {
+    let visible = contents.filter((item) => !item.archivedAt);
     if (statusFilter === "active") {
-      return deduplicatedContents.filter((item) => item?.status !== "published");
+      visible = visible.filter((item) => item?.status !== "published");
+    } else if (statusFilter !== "all") {
+      visible = visible.filter((item) => item?.status === statusFilter);
     }
-    if (statusFilter === "all") return deduplicatedContents;
-    return deduplicatedContents.filter((item) => item?.status === statusFilter);
-  }, [
-    deduplicatedContents,
-    statusFilter,
-  ]);
+
+    return chooseContentPerProduct(visible);
+  }, [contents, statusFilter]);
 
   const archivedContents = useMemo(
     () => contents.filter((item) => Boolean(item.archivedAt)),
@@ -454,7 +447,9 @@ export default function ContentManagementPage() {
   const counts = useMemo(() => {
     return {
       content:
-        deduplicatedContents.filter((item) => item.status !== "published").length,
+        chooseContentPerProduct(
+          contents.filter((item) => !item.archivedAt && item.status !== "published")
+        ).length,
       scheduled:
         schedules.filter(
           (item) =>
@@ -467,7 +462,7 @@ export default function ContentManagementPage() {
         failedHistory.length,
     };
   }, [
-    deduplicatedContents,
+    contents,
     schedules,
     publishedHistory,
     failedHistory,
@@ -786,6 +781,7 @@ export default function ContentManagementPage() {
               </h2>
 
               <p className="text-sm text-gray-500">Pending work lives here. Click × to archive finished items; publishing history stays saved.</p>
+    <p className="mt-1 text-xs text-gray-500">One item per product is shown. Uploaded video is preferred; otherwise the Reel is shown.</p>
             </div>
 
             <select

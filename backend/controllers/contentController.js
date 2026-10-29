@@ -586,25 +586,20 @@ const generateProductReel = async (req, res) => {
     reelGenerationLocks.add(generationLockKey);
 
     const reelCaption = createProductSocialCaption(product, process.env.FRONTEND_URL || "");
-    const duplicateSince = new Date(Date.now() - 60_000);
-    const findRecentReel = () => Content.findOne({
+    const findExistingReel = () => Content.findOne({
       product: product._id,
       type: "reel",
-      platform: "all",
-      caption: reelCaption,
-      createdBy: req.user._id,
       status: { $nin: ["rejected"] },
       archivedAt: null,
-      createdAt: { $gte: duplicateSince },
     }).sort({ createdAt: -1 });
-    const existingRecentReel = await findRecentReel();
-    if (existingRecentReel) {
-      const populatedExistingReel = await Content.findById(existingRecentReel._id)
+    const existingReel = await findExistingReel();
+    if (existingReel) {
+      const populatedExistingReel = await Content.findById(existingReel._id)
         .populate("product", "name price category images")
         .populate("createdBy", "name email");
       return res.json({
         success: true,
-        message: "A recent Reel already exists. Use that content instead of creating a duplicate.",
+        message: "This product already has a Reel. Use that content instead of creating a second one.",
         content: populatedExistingReel,
         duplicate: true,
       });
@@ -623,14 +618,14 @@ const generateProductReel = async (req, res) => {
 
     // Check again after rendering so a near-simultaneous second request can
     // reuse the first Reel instead of uploading and saving another copy.
-    const existingRenderedReel = await findRecentReel();
+    const existingRenderedReel = await findExistingReel();
     if (existingRenderedReel) {
       const populatedExistingReel = await Content.findById(existingRenderedReel._id)
         .populate("product", "name price category images")
         .populate("createdBy", "name email");
       return res.json({
         success: true,
-        message: "A recent Reel already exists. Use that content instead of creating a duplicate.",
+        message: "This product already has a Reel. Use that content instead of creating a second one.",
         content: populatedExistingReel,
         duplicate: true,
       });

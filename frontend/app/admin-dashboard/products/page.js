@@ -462,7 +462,11 @@ export default function ProductsPage() {
       );
 
       if (response.data.success) {
-        alert("Reel generated successfully!");
+        alert(
+          response.data.duplicate
+            ? "Is product ki Reel pehle se bani hui hai. Wohi use karein."
+            : "Reel generated successfully!"
+        );
       }
     } catch (error) {
       console.error(
