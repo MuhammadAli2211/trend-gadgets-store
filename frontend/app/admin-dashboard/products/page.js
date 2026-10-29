@@ -10,6 +10,7 @@ export default function ProductsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [generatingReelId, setGeneratingReelId] = useState("");
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -455,6 +456,7 @@ export default function ProductsPage() {
     if (!confirmed) return;
 
     try {
+      setGeneratingReelId(product._id);
       const response = await api.post(
         `/content/generate-reel/${product._id}`
       );
@@ -470,13 +472,16 @@ export default function ProductsPage() {
 
       alert(
         error.response?.data?.message ||
-          "Unable to generate reel."
+          "Reel nahi ban saki. Server ka waqt khatam ho sakta hai; dobara try karein."
       );
+    } finally {
+      setGeneratingReelId("");
     }
   }}
-  className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700"
+  disabled={Boolean(generatingReelId)}
+  className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:cursor-wait disabled:opacity-60"
 >
-  Generate Reel
+  {generatingReelId === product._id ? "Generating..." : "Generate Reel"}
 </button>
 
                           </div>

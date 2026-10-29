@@ -8,6 +8,23 @@ const ffmpegPath = require("ffmpeg-static");
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+// Keep generated Reels fast enough for serverless requests while retaining
+// a 720p portrait output suitable for Instagram and Facebook Reels.
+const REEL_WIDTH = 720;
+const REEL_HEIGHT = 1280;
+const REEL_FPS = 30;
+const CLIP_SECONDS = 3;
+const VIDEO_ENCODING_OPTIONS = [
+  "-c:v libx264",
+  "-preset veryfast",
+  "-crf 23",
+  "-threads 2",
+  "-pix_fmt yuv420p",
+  "-r 30",
+  "-an",
+  "-movflags +faststart",
+];
+
 /*
 |--------------------------------------------------------------------------
 | Download Image
@@ -42,29 +59,29 @@ const createTextOverlay = async (
 
   const svg = `
   <svg
-    width="1080"
-    height="1920"
+    width="${REEL_WIDTH}"
+    height="${REEL_HEIGHT}"
     xmlns="http://www.w3.org/2000/svg"
   >
 
     <!-- Top Product Box -->
 
     <rect
-      x="55"
-      y="100"
-      width="970"
-      height="250"
-      rx="35"
+      x="37"
+      y="67"
+      width="646"
+      height="167"
+      rx="23"
       fill="black"
       fill-opacity="0.72"
     />
 
     <text
-      x="540"
-      y="200"
+      x="360"
+      y="133"
       text-anchor="middle"
       font-family="Arial"
-      font-size="58"
+      font-size="39"
       font-weight="bold"
       fill="white"
     >
@@ -72,11 +89,11 @@ const createTextOverlay = async (
     </text>
 
     <text
-      x="540"
-      y="290"
+      x="360"
+      y="193"
       text-anchor="middle"
       font-family="Arial"
-      font-size="52"
+      font-size="35"
       font-weight="bold"
       fill="white"
     >
@@ -86,21 +103,21 @@ const createTextOverlay = async (
     <!-- Bottom CTA -->
 
     <rect
-      x="140"
-      y="1640"
-      width="800"
-      height="140"
-      rx="70"
+      x="93"
+      y="1093"
+      width="534"
+      height="93"
+      rx="47"
       fill="black"
       fill-opacity="0.78"
     />
 
     <text
-      x="540"
-      y="1730"
+      x="360"
+      y="1153"
       text-anchor="middle"
       font-family="Arial"
-      font-size="48"
+      font-size="32"
       font-weight="bold"
       fill="white"
     >
@@ -151,8 +168,8 @@ const createImageClip = (
         {
           filter: "scale",
           options: {
-            w: 1080,
-            h: 1920,
+            w: REEL_WIDTH,
+            h: REEL_HEIGHT,
             force_original_aspect_ratio:
               "decrease",
           },
@@ -163,8 +180,8 @@ const createImageClip = (
         {
           filter: "pad",
           options: {
-            w: 1080,
-            h: 1920,
+            w: REEL_WIDTH,
+            h: REEL_HEIGHT,
             x: "(ow-iw)/2",
             y: "(oh-ih)/2",
             color: "black",
@@ -179,9 +196,9 @@ const createImageClip = (
             z: zoomExpression,
             x: "(iw-iw/zoom)/2",
             y: "(ih-ih/zoom)/2",
-            d: 90,
-            s: "1080x1920",
-            fps: 30,
+            d: CLIP_SECONDS * REEL_FPS,
+            s: `${REEL_WIDTH}x${REEL_HEIGHT}`,
+            fps: REEL_FPS,
           },
           inputs: "[padded]",
           outputs: "animated",
@@ -202,12 +219,8 @@ const createImageClip = (
       ])
       .outputOptions([
         "-map [final]",
-        "-t 3",
-        "-r 30",
-        "-c:v libx264",
-        "-pix_fmt yuv420p",
-        "-an",
-        "-movflags +faststart",
+        `-t ${CLIP_SECONDS}`,
+        ...VIDEO_ENCODING_OPTIONS,
       ])
       .output(outputPath)
       .on("end", resolve)
@@ -221,11 +234,11 @@ const createVideoClip = (videoPath, overlayPath, outputPath) => new Promise((res
     .input(videoPath)
     .input(overlayPath)
     .complexFilter([
-      { filter: "scale", options: { w: 1080, h: 1920, force_original_aspect_ratio: "increase" }, inputs: "0:v", outputs: "scaled" },
-      { filter: "crop", options: { w: 1080, h: 1920, x: "(iw-ow)/2", y: "(ih-oh)/2" }, inputs: "scaled", outputs: "portrait" },
+      { filter: "scale", options: { w: REEL_WIDTH, h: REEL_HEIGHT, force_original_aspect_ratio: "increase" }, inputs: "0:v", outputs: "scaled" },
+      { filter: "crop", options: { w: REEL_WIDTH, h: REEL_HEIGHT, x: "(iw-ow)/2", y: "(ih-oh)/2" }, inputs: "scaled", outputs: "portrait" },
       { filter: "overlay", options: { x: 0, y: 0 }, inputs: ["portrait", "1:v"], outputs: "final" },
     ])
-    .outputOptions(["-map [final]", "-t 3", "-r 30", "-c:v libx264", "-pix_fmt yuv420p", "-an", "-movflags +faststart"])
+    .outputOptions([`-map [final]`, `-t ${CLIP_SECONDS}`, ...VIDEO_ENCODING_OPTIONS])
     .output(outputPath)
     .on("end", resolve)
     .on("error", reject)
@@ -330,11 +343,9 @@ const combineClips = (
         "-f concat",
         "-safe 0",
       ])
-      .outputOptions([
-        "-c:v libx264",
-        "-pix_fmt yuv420p",
-        "-movflags +faststart",
-      ])
+      // Every clip is encoded with identical dimensions, frame rate, and
+      // codec settings; stream-copying avoids a costly second video encode.
+      .outputOptions(["-c copy", "-movflags +faststart"])
       .output(outputPath)
       .on("end", resolve)
       .on("error", reject)
@@ -535,8 +546,7 @@ const createReel = async ({
     |--------------------------------------------------------------------------
     */
 
-    const duration =
-      clipFiles.length * 3;
+    const duration = clipFiles.length * CLIP_SECONDS;
 
     /*
     |--------------------------------------------------------------------------
