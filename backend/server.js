@@ -30,6 +30,9 @@ const PORT =
 
 const isVercel = Boolean(process.env.VERCEL);
 let databaseConnectionPromise = null;
+mongoose.connection.on("disconnected", () => {
+  databaseConnectionPromise = null;
+});
 
 // =========================
 // CORS
@@ -81,6 +84,12 @@ app.use(
 const connectDatabase = async () => {
   if (mongoose.connection.readyState === 1) {
     return true;
+  }
+
+  // A cached resolved promise must not make a disconnected warm serverless
+  // instance appear healthy. Recreate it whenever Mongoose is disconnected.
+  if (mongoose.connection.readyState === 0 || mongoose.connection.readyState === 3) {
+    databaseConnectionPromise = null;
   }
 
   if (!process.env.MONGO_URI) {

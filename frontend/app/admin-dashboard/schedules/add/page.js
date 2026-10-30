@@ -69,22 +69,17 @@ export default function AddSchedulePage() {
     const contentId = contentIdFromUrl || contentIdFromStorage || "";
 
     if (contentId) {
-      setPreferredContentId(contentId);
+      const timeoutId = setTimeout(() => setPreferredContentId(contentId), 0);
       window.sessionStorage.removeItem("cart2door-schedule-content");
+      return () => clearTimeout(timeoutId);
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    if (
-      preferredContentId &&
-      contents.some((content) => content._id === preferredContentId)
-    ) {
-      setForm((previous) => ({
-        ...previous,
-        content: preferredContentId,
-      }));
-    }
-  }, [contents, preferredContentId]);
+  const selectedContentId =
+    form.content ||
+    (contents.some((content) => content._id === preferredContentId)
+      ? preferredContentId
+      : "");
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -119,7 +114,7 @@ export default function AddSchedulePage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.content) {
+    if (!selectedContentId) {
       setError("Please select approved content.");
       return;
     }
@@ -154,7 +149,7 @@ export default function AddSchedulePage() {
       setSaving(true);
 
       const payload = {
-        content: form.content,
+        content: selectedContentId,
 
         // New backend format
         platforms: form.platforms,
@@ -253,7 +248,7 @@ export default function AddSchedulePage() {
             ) : (
               <select
                 name="content"
-                value={form.content}
+                value={selectedContentId}
                 onChange={handleChange}
                 className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 outline-none focus:border-black"
               >

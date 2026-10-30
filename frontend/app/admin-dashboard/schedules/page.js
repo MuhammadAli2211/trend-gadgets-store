@@ -13,6 +13,16 @@ const [refreshing, setRefreshing] = useState(false);
 const [deletingId, setDeletingId] = useState("");
 const [retryingInstagramId, setRetryingInstagramId] = useState("");
 const [error, setError] = useState("");
+const [currentTime, setCurrentTime] = useState(0);
+
+useEffect(() => {
+  const initialTimeout = setTimeout(() => setCurrentTime(Date.now()), 0);
+  const intervalId = setInterval(() => setCurrentTime(Date.now()), 30_000);
+  return () => {
+    clearTimeout(initialTimeout);
+    clearInterval(intervalId);
+  };
+}, []);
 
 const loadSchedules = async (showLoader = true) => {
 try {
@@ -87,9 +97,12 @@ try {
 };
 
 const retryInstagramForSchedule = async (schedule) => {
+  const facebookPost = (schedule.publishedPosts || []).find(
+    (post) => post.platform === "facebook" && post.success
+  );
   const facebookPermalink = window.prompt(
     "Facebook wali live Reel ka link check karein:",
-    "https://www.facebook.com/reel/1668233174885888"
+    facebookPost?.publishedUrl || ""
   );
   if (!facebookPermalink) return;
 
@@ -726,12 +739,17 @@ return ( <main className="min-h-screen bg-gray-100">
                   // processing lock; currentRunStartedAt may describe an
                   // earlier retry cycle and make a live run look stuck.
                   const stuckSince = new Date(schedule.lastRunAt || 0).getTime();
+                  const facebookConfirmed = publishedPosts.some(
+                    (post) => post.platform === "facebook" && post.success && post.postId
+                  );
+                  const instagramConfirmed = publishedPosts.some(
+                    (post) => post.platform === "instagram" && post.success
+                  );
                   const canRecoverInstagram =
                     ["processing", "failed"].includes(schedule.status) &&
-                    Number(schedule.runCount || 0) >= 3 &&
-                    stuckSince > 0 && Date.now() - stuckSince >= 6 * 60 * 1000 &&
-                    platforms.includes("facebook") && platforms.includes("instagram") &&
-                    String(schedule.content?.product?.name || "").toLowerCase().includes("super smooth 3 blade spin cutter");
+                    !instagramConfirmed && facebookConfirmed &&
+                    stuckSince > 0 && currentTime - stuckSince >= 6 * 60 * 1000 &&
+                    platforms.includes("facebook") && platforms.includes("instagram");
 
                   return (
                     <tr
