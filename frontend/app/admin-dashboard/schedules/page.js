@@ -722,9 +722,10 @@ return ( <main className="min-h-screen bg-gray-100">
                     getPublishedPosts(
                       schedule
                     );
-                  const stuckSince = new Date(
-                    schedule.currentRunStartedAt || schedule.lastRunAt || 0
-                  ).getTime();
+                  // lastRunAt is refreshed when the worker acquires the
+                  // processing lock; currentRunStartedAt may describe an
+                  // earlier retry cycle and make a live run look stuck.
+                  const stuckSince = new Date(schedule.lastRunAt || 0).getTime();
                   const canRecoverInstagram =
                     ["processing", "failed"].includes(schedule.status) &&
                     Number(schedule.runCount || 0) >= 3 &&

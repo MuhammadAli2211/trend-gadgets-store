@@ -154,8 +154,12 @@ app.get("/api/cron/process-schedules", async (req, res) => {
   }
 
   try {
-    await processDueSchedules();
-    return res.json({ success: true, message: "Due schedules checked." });
+    const result = await processDueSchedules();
+    return res.json({
+      success: true,
+      message: "Due schedules checked.",
+      ...result,
+    });
   } catch (error) {
     console.error("Vercel schedule cron error:", error);
     return res.status(500).json({ success: false, message: "Unable to process schedules." });

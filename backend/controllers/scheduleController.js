@@ -950,7 +950,9 @@ const retryInstagramForSchedule = async (req, res) => {
       return res.status(400).json({ success: false, message: "This recovery is only for schedules targeting Facebook and Instagram." });
     }
 
-    const startedAt = schedule.currentRunStartedAt || schedule.lastRunAt;
+    // Use the current lock time, not the original retry-cycle start. The
+    // latter can make an actively running Instagram retry appear stale.
+    const startedAt = schedule.lastRunAt;
     const minimumStuckMs = 6 * 60 * 1000;
     if (!startedAt || Date.now() - new Date(startedAt).getTime() < minimumStuckMs) {
       return res.status(409).json({ success: false, message: "This schedule may still be running. Try again after it has been stuck for 6 minutes." });

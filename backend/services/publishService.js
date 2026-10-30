@@ -21,7 +21,7 @@ const META_GRAPH_BASE =
   `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 const INSTAGRAM_GRAPH_BASE =
-  "https://graph.instagram.com";
+  `https://graph.instagram.com/${META_GRAPH_VERSION}`;
 
 // ======================================================
 // HELPERS
@@ -2142,7 +2142,9 @@ const processDueSchedules =
         );
       }
 
-      const staleProcessingBefore = new Date(Date.now() - 15 * 60 * 1000);
+      // The Vercel function is capped at 5 minutes. Add a 2-minute safety
+      // margin, then recover interrupted work on the next cron invocation.
+      const staleProcessingBefore = new Date(Date.now() - 7 * 60 * 1000);
       const staleProcessingSchedules = await Schedule.find({
         status: "processing",
         $or: [
@@ -2179,7 +2181,7 @@ const processDueSchedules =
         schedule.retryCount = 0;
         schedule.retryForScheduledAt = schedule.retryForScheduledAt || schedule.scheduledAt;
         schedule.retryRecoveryApplied = true;
-        schedule.scheduledAt = new Date(Date.now() + 30 * 1000);
+        schedule.scheduledAt = new Date();
         schedule.status = "scheduled";
         schedule.errorMessage = "Recovered after interrupted publishing; only platforms without a confirmed result will retry.";
         await schedule.save();
@@ -2197,32 +2199,42 @@ const processDueSchedules =
           .sort({
             scheduledAt: 1,
           })
-          .limit(10)
+          // A video publish can spend up to 90 seconds waiting on Instagram.
+          // Keep a small batch so one serverless invocation can finish safely.
+          .limit(2)
           .select("_id");
 
-      if (
-        dueSchedules.length === 0
-      ) {
-        return;
+      if (dueSchedules.length === 0) {
+        return { due: 0, processed: 0, schedules: [] };
       }
 
       console.log(
         `Found ${dueSchedules.length} due schedule(s).`
       );
 
-      for (
-        const schedule of dueSchedules
-      ) {
-        await processSchedule(
-          schedule._id
-        );
+      const schedules = [];
+      for (const schedule of dueSchedules) {
+        const result = await processSchedule(schedule._id);
+        schedules.push({
+          id: schedule._id.toString(),
+          success: Boolean(result?.success),
+          retrying: Boolean(result?.retrying),
+          message: result?.message || "",
+          results: (result?.results || []).map((item) => ({
+            platform: item.platform,
+            success: Boolean(item.success),
+            error: item.error || "",
+            postId: item.success ? item.postId || "" : "",
+            publishedUrl: item.success ? item.publishedUrl || "" : "",
+          })),
+        });
       }
 
+      return { due: dueSchedules.length, processed: schedules.length, schedules };
+
     } catch (error) {
-      console.error(
-        "Due schedule worker error:",
-        error.message
-      );
+      console.error("Due schedule worker error:", error);
+      throw error;
     }
   };
 

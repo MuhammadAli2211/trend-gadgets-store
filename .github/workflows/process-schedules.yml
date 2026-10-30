@@ -12,7 +12,9 @@ permissions: {}
 jobs:
   process-due-schedules:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    # The Vercel function may need time to wait for Instagram to finish
+    # processing a Reel before it can publish and save the result.
+    timeout-minutes: 5
     steps:
       - name: Call the protected schedule worker
         env:
@@ -23,6 +25,6 @@ jobs:
             exit 1
           fi
           curl --fail-with-body --silent --show-error \
-            --max-time 90 \
+            --max-time 270 \
             -H "Authorization: Bearer $CRON_SECRET" \
             https://trend-gadgets-api.vercel.app/api/cron/process-schedules
