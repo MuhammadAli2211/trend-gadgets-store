@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import axios from "axios";
 
 const API_URL =
@@ -146,7 +147,7 @@ export default function AnalyticsPage() {
   // AUTH
   // ===================================================
 
-  const getAuthHeaders = () => {
+  const getAuthHeaders = useCallback(() => {
     if (
       typeof window === "undefined"
     ) {
@@ -162,7 +163,7 @@ export default function AnalyticsPage() {
             `Bearer ${token}`,
         }
       : {};
-  };
+  }, []);
 
   // ===================================================
   // FORMAT
@@ -257,7 +258,7 @@ export default function AnalyticsPage() {
   // LOAD PLATFORM
   // ===================================================
 
-  const loadPlatform = async (
+  const loadPlatform = useCallback(async (
     platform
   ) => {
     try {
@@ -282,13 +283,13 @@ export default function AnalyticsPage() {
 
       return emptyAnalytics;
     }
-  };
+  }, [period, getAuthHeaders]);
 
   // ===================================================
   // LOAD ANALYTICS
   // ===================================================
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     try {
       const headers =
         getAuthHeaders();
@@ -409,7 +410,7 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period, getAuthHeaders, loadPlatform]);
 
   // ===================================================
   // META SYNC
@@ -468,7 +469,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const timeoutId = setTimeout(() => loadAnalytics(), 0);
     return () => clearTimeout(timeoutId);
-  }, [period]);
+  }, [loadAnalytics]);
 
   // ===================================================
   // STAT CARD
@@ -1368,24 +1369,7 @@ export default function AnalyticsPage() {
                         }}
                       >
                         {product.image ? (
-                          <img
-                            src={
-                              product.image
-                            }
-                            alt={
-                              product.name
-                            }
-                            style={{
-                              width:
-                                "45px",
-                              height:
-                                "45px",
-                              objectFit:
-                                "cover",
-                              borderRadius:
-                                "8px",
-                            }}
-                          />
+                          <Image src={product.image} alt={product.name} width={45} height={45} sizes="45px" style={{ objectFit: "cover", borderRadius: "8px" }} />
                         ) : (
                           <div
                             style={{
@@ -1732,24 +1716,7 @@ export default function AnalyticsPage() {
                         }}
                       >
                         {content.mediaUrl ? (
-                          <img
-                            src={
-                              content.mediaUrl
-                            }
-                            alt={
-                              content.title
-                            }
-                            style={{
-                              width:
-                                "60px",
-                              height:
-                                "60px",
-                              objectFit:
-                                "cover",
-                              borderRadius:
-                                "8px",
-                            }}
-                          />
+                          <Image src={content.mediaUrl} alt={content.title} width={60} height={60} sizes="60px" style={{ objectFit: "cover", borderRadius: "8px" }} />
                         ) : (
                           <div
                             style={{
@@ -1833,22 +1800,7 @@ export default function AnalyticsPage() {
                         }}
                       >
                         {content.productImage && (
-                          <img
-                            src={
-                              content.productImage
-                            }
-                            alt=""
-                            style={{
-                              width:
-                                "35px",
-                              height:
-                                "35px",
-                              objectFit:
-                                "cover",
-                              borderRadius:
-                                "6px",
-                            }}
-                          />
+                          <Image src={content.productImage} alt="" width={35} height={35} sizes="35px" style={{ objectFit: "cover", borderRadius: "6px" }} />
                         )}
 
                         <span>

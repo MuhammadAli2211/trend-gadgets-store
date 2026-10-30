@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 import api from "../../../lib/api";
 
@@ -837,7 +838,7 @@ export default function ContentManagementPage() {
                     isVideo(content) ? (
                       <video src={mediaUrl} muted playsInline preload="metadata" className="h-28 w-20 shrink-0 rounded-xl bg-black object-cover sm:h-20 sm:w-28" />
                     ) : (
-                      <img src={mediaUrl} alt="" className="h-28 w-20 shrink-0 rounded-xl bg-gray-100 object-cover sm:h-20 sm:w-28" />
+                      <Image src={mediaUrl} alt="" width={112} height={160} sizes="(max-width: 640px) 80px, 112px" className="h-28 w-20 shrink-0 rounded-xl bg-gray-100 object-cover sm:h-20 sm:w-28" />
                     )
                   ) : (
                     <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-xs text-gray-400 sm:h-20 sm:w-28">No media</div>

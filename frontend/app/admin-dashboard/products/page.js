@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 import api from "../../../lib/api";
 
@@ -18,14 +19,14 @@ export default function ProductsPage() {
 
   
 
-  async function loadProducts() {
+  const loadProducts = useCallback(async ({ search: searchFilter = "", category: categoryFilter = "", status: statusFilter = "" } = {}) => {
     try {
 
       const response = await api.get("/products", {
         params: {
-          search: search || undefined,
-          category: category || undefined,
-          status: status || undefined,
+          search: searchFilter || undefined,
+          category: categoryFilter || undefined,
+          status: statusFilter || undefined,
         },
       });
 
@@ -42,12 +43,12 @@ export default function ProductsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadProducts(), 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [loadProducts]);
 
   useEffect(() => {
     if (loading || products.length === 0) return;
@@ -60,7 +61,7 @@ export default function ProductsPage() {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    loadProducts();
+    loadProducts({ search, category, status });
   };
 
   const deleteProduct = async (id) => {
@@ -100,7 +101,7 @@ export default function ProductsPage() {
       );
 
       if (response.data.success) {
-        loadProducts();
+        loadProducts({ search, category, status });
       }
     } catch (error) {
       console.error(
@@ -259,7 +260,7 @@ export default function ProductsPage() {
           </select>
 
           <button
-            onClick={loadProducts}
+            onClick={() => loadProducts({ search, category, status })}
             className="rounded-lg border bg-white px-5 py-2.5 hover:bg-gray-50"
           >
             Apply Filters
@@ -354,14 +355,10 @@ export default function ProductsPage() {
 
                           <div className="flex items-center gap-4">
 
-                            <div className="h-16 w-16 overflow-hidden rounded-lg border bg-gray-100">
+                            <div className="relative h-16 w-16 overflow-hidden rounded-lg border bg-gray-100">
 
                               {image ? (
-                                <img
-                                  src={image}
-                                  alt={product.name}
-                                  className="h-full w-full object-cover"
-                                />
+                                <Image src={image} alt={product.name} fill sizes="64px" className="object-cover" />
                               ) : product.video?.url ? (
                                 <video src={product.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
                               ) : (

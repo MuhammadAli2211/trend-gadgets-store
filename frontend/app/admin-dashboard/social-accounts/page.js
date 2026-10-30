@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const API_URL =
   process.env.NODE_ENV === "production"
@@ -21,16 +21,16 @@ export default function SocialAccountsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const getToken = () => {
+  const getToken = useCallback(() => {
     if (typeof window === "undefined") return null;
 
     return (
       localStorage.getItem("token") ||
       localStorage.getItem("accessToken")
     );
-  };
+  }, []);
 
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
     try {
       const token = getToken();
 
@@ -76,7 +76,7 @@ export default function SocialAccountsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [getToken]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -104,7 +104,7 @@ export default function SocialAccountsPage() {
       }
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, []);
+  }, [loadAccounts]);
 
   const startOAuth = async (platform) => {
     const token = getToken();

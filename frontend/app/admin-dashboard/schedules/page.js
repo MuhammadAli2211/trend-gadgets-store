@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import api from "../../../lib/api";
 
 export default function SchedulesPage() {
@@ -776,13 +777,7 @@ return ( <main className="min-h-screen bg-gray-100">
                                 preload="metadata"
                               />
                             ) : (
-                              <img
-                                src={
-                                  mediaUrl
-                                }
-                                alt="Content"
-                                className="h-16 w-24 rounded-lg bg-gray-100 object-cover"
-                              />
+                              <Image src={mediaUrl} alt="Content" width={96} height={64} sizes="96px" className="h-16 w-24 rounded-lg bg-gray-100 object-cover" />
                             )
                           ) : (
                             <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-xs font-medium text-gray-400">

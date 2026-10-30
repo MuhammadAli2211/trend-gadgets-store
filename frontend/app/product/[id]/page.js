@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 
 import api from "../../../lib/api";
 import { toWhatsAppPhone } from "../../../lib/phone";
 
 export default function ProductPage() {
   const params = useParams();
+  const routeProductId = params?.id;
 
   const [product, setProduct] = useState(null);
 
@@ -50,7 +52,7 @@ export default function ProductPage() {
 
   
 
-  async function loadProduct() {
+  const loadProduct = useCallback(async () => {
     try {
 
       const [
@@ -58,7 +60,7 @@ export default function ProductPage() {
         whatsappResponse,
       ] = await Promise.all([
         api.get(
-          `/public/products/${params.id}`
+          `/public/products/${routeProductId}`
         ),
 
         api.get(
@@ -98,13 +100,13 @@ export default function ProductPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [routeProductId]);
 
   useEffect(() => {
-    if (!params?.id) return;
+    if (!routeProductId) return;
     const timeoutId = setTimeout(() => loadProduct(), 0);
     return () => clearTimeout(timeoutId);
-  }, [params?.id]);
+  }, [routeProductId, loadProduct]);
 
   // =========================
   // TRACK ANALYTICS
@@ -480,15 +482,11 @@ export default function ProductPage() {
           ========================= */}
 
           <div>
-            <div className="aspect-square overflow-hidden rounded-2xl bg-gray-100">
+            <div className="relative aspect-square overflow-hidden rounded-2xl bg-gray-100">
               {selectedMedia?.type === "video" ? (
                 <video src={selectedMedia.url} controls playsInline className="h-full w-full object-contain" />
               ) : selectedMedia?.url ? (
-                <img
-                  src={selectedMedia.url}
-                  alt={product.name}
-                  className="h-full w-full object-cover"
-                />
+                <Image src={selectedMedia.url} alt={product.name} fill sizes="(max-width: 768px) 100vw, 50vw" className="object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-gray-400">
                   No Image
@@ -512,19 +510,13 @@ export default function ProductPage() {
                           index
                         )
                       }
-                      className={`aspect-square overflow-hidden rounded-lg border-2 ${
+                      className={`relative aspect-square overflow-hidden rounded-lg border-2 ${
                         selectedImage === index
                           ? "border-black"
                           : "border-transparent"
                       }`}
                     >
-                      {media.type === "video" ? <video src={media.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <img
-                        src={media.url}
-                        alt={`${product.name} ${
-                          index + 1
-                        }`}
-                        className="h-full w-full object-cover"
-                      />}
+                      {media.type === "video" ? <video src={media.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <Image src={media.url} alt={`${product.name} ${index + 1}`} fill sizes="(max-width: 640px) 25vw, 128px" className="object-cover" />}
                     </button>
                   )
                 )}

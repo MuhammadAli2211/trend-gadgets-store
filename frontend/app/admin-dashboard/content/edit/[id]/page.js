@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import api from "../../../../../lib/api";
 
 export default function EditContentPage() {
@@ -30,7 +31,7 @@ export default function EditContentPage() {
 
   
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
 
       const [contentResponse, productsResponse] =
@@ -69,13 +70,13 @@ export default function EditContentPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [contentId]);
 
   useEffect(() => {
     if (!contentId) return;
     const timeoutId = setTimeout(() => loadData(), 0);
     return () => clearTimeout(timeoutId);
-  }, [contentId]);
+  }, [contentId, loadData]);
 
   const handleChange = (e) => {
     setForm({
@@ -304,10 +305,13 @@ export default function EditContentPage() {
                   className="max-h-72 rounded-lg"
                 />
               ) : (
-                <img
+                <Image
                   src={existingMedia.url}
                   alt="Current content"
-                  className="max-h-72 rounded-lg object-contain"
+                  width={720}
+                  height={540}
+                  sizes="(max-width: 768px) 100vw, 720px"
+                  className="h-auto max-h-72 max-w-full rounded-lg object-contain"
                 />
               )}
             </div>

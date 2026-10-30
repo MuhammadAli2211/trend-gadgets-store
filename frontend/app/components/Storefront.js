@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import api from "../../lib/api";
 import { getProductCategoryList, normalizeProductCategory } from "../../lib/productCategories";
 import { toWhatsAppPhone } from "../../lib/phone";
@@ -158,7 +159,7 @@ export default function Storefront() {
         <div className="hidden bg-emerald-800 px-3 py-1.5 text-center text-xs font-medium text-white sm:block">Easy ordering · Direct WhatsApp support</div>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-2 sm:gap-4 sm:px-6 sm:py-3">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <img src="/logo.png" alt="Trend Gadgets & Toys" className="h-11 w-11 shrink-0 rounded-full object-cover sm:h-14 sm:w-14" />
+            <Image src="/logo.png" alt="Trend Gadgets & Toys" width={56} height={56} sizes="56px" className="h-11 w-11 shrink-0 rounded-full object-cover sm:h-14 sm:w-14" />
             <span>
               <span className="block truncate text-sm font-bold leading-tight sm:text-lg">Trend Gadgets & Toys</span>
               <span className="hidden text-xs text-slate-500 min-[360px]:block">Shop the best toys</span>
@@ -226,8 +227,8 @@ export default function Storefront() {
                 return (
                   <article key={product._id} className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg sm:rounded-2xl">
                     <Link href={`/product/${product._id}`} className="block">
-                      <div className="aspect-square overflow-hidden bg-slate-100">
-                        {image ? <img src={image} alt={product.name} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" /> : product.video?.url ? <video src={product.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-slate-400">No image available</div>}
+                      <div className="relative aspect-square overflow-hidden bg-slate-100">
+                        {image ? <Image src={image} alt={product.name} fill sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 25vw" className="object-cover transition duration-300 group-hover:scale-[1.03]" /> : product.video?.url ? <video src={product.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-slate-400">No image available</div>}
                       </div>
                     </Link>
                     <div className="flex flex-1 flex-col p-2.5 sm:p-4">
@@ -275,7 +276,7 @@ export default function Storefront() {
                 <ul className="flex-1 divide-y overflow-y-auto px-5">
                   {cart.map((item) => (
                     <li key={item._id} className="flex gap-3 py-4">
-                      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-slate-100">{item.images?.[0]?.url ? <img src={item.images[0].url} alt={item.name} className="h-full w-full object-cover" /> : item.video?.url ? <video src={item.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : null}</div>
+                      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-slate-100">{item.images?.[0]?.url ? <Image src={item.images[0].url} alt={item.name} fill sizes="80px" className="object-cover" /> : item.video?.url ? <video src={item.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : null}</div>
                       <div className="min-w-0 flex-1"><p className="line-clamp-2 font-semibold">{item.name}</p><p className="mt-1 text-sm text-slate-500">{formatPrice(item.price)}</p><div className="mt-2 flex items-center gap-3"><button type="button" onClick={() => updateQuantity(item._id, -1)} aria-label={`Remove one ${item.name}`} className="h-8 w-8 rounded-lg border text-lg">−</button><span className="min-w-4 text-center text-sm font-semibold">{item.quantity}</span><button type="button" onClick={() => updateQuantity(item._id, 1)} aria-label={`Add one ${item.name}`} className="h-8 w-8 rounded-lg border text-lg">+</button><button type="button" onClick={() => setCart((items) => items.filter((entry) => entry._id !== item._id))} className="ml-auto text-sm font-medium text-red-600">Remove</button></div></div>
                     </li>
                   ))}

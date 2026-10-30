@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 
 import api from "../../../../../lib/api";
 import { uploadProductVideo } from "../../../../../lib/cloudinaryUpload";
@@ -38,7 +39,7 @@ export default function EditProductPage() {
 
   
 
-  async function loadProduct() {
+  const loadProduct = useCallback(async () => {
     try {
 
       const response = await api.get(
@@ -86,13 +87,13 @@ export default function EditProductPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [productId]);
 
   useEffect(() => {
     if (!productId) return;
     const timeoutId = setTimeout(() => loadProduct(), 0);
     return () => clearTimeout(timeoutId);
-  }, [productId]);
+  }, [productId, loadProduct]);
 
   // =========================
   // FORM CHANGE
@@ -477,19 +478,13 @@ export default function EditProductPage() {
                     return (
                       <div
                         key={index}
-                        className="relative overflow-hidden rounded-lg border"
+                        className="relative h-32 overflow-hidden rounded-lg border"
                       >
 
                         {imageUrl ? (
-                          <img
-                            src={imageUrl}
-                            alt={`Product image ${
-                              index + 1
-                            }`}
-                            className="h-32 w-full object-cover"
-                          />
+                          <Image src={imageUrl} alt={`Product image ${index + 1}`} fill sizes="(max-width: 640px) 50vw, 25vw" className="object-cover" />
                         ) : (
-                          <div className="flex h-32 items-center justify-center bg-gray-100 text-xs text-gray-400">
+                          <div className="flex h-full items-center justify-center bg-gray-100 text-xs text-gray-400">
                             No Image
                           </div>
                         )}

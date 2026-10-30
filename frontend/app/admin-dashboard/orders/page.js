@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import api from "../../../lib/api";
 
@@ -42,7 +42,7 @@ useState("");
 
 
 
-async function loadData() {
+const loadData = useCallback(async () => {
 try {
 
 
@@ -116,12 +116,12 @@ try {
 }
 
 
-}
+}, [search, statusFilter]);
 
   useEffect(() => {
 const timeoutId = setTimeout(() => loadData(), 0);
 return () => clearTimeout(timeoutId);
-}, [statusFilter, search]);
+}, [loadData]);
 
 // =========================
 // SEARCH

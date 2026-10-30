@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "../../../../../lib/api";
 import { localDateTimeToIso, toLocalDateTimeInput } from "../../../../../lib/scheduleTime";
@@ -30,7 +30,7 @@ export default function EditSchedulePage() {
 
   
 
-  async function loadSchedule() {
+  const loadSchedule = useCallback(async () => {
     try {
 
       const response = await api.get(`/schedules/${scheduleId}`);
@@ -71,13 +71,13 @@ export default function EditSchedulePage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [scheduleId]);
 
   useEffect(() => {
     if (!scheduleId) return;
     const timeoutId = setTimeout(() => loadSchedule(), 0);
     return () => clearTimeout(timeoutId);
-  }, [scheduleId]);
+  }, [scheduleId, loadSchedule]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;

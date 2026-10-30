@@ -6,12 +6,14 @@ import {
   useEffect,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 
 import api from "../lib/api";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -127,7 +129,7 @@ export const AuthProvider = ({ children }) => {
 
     setUser(null);
 
-    window.location.href = "/login";
+    router.replace("/login");
   };
 
   return (
