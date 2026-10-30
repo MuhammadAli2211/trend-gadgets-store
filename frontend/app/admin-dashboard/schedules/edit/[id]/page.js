@@ -51,7 +51,7 @@ export default function EditSchedulePage() {
           repeatEvery: Math.min(365, Math.max(1, Number(data.repeatEvery) || 1)),
           repeatUnit: "days",
           generateNewContent:
-            data.generateNewContent !== false,
+            data.generateNewContent === true,
           autoDeletePrevious:
             data.autoDeletePrevious !== false,
         });
@@ -343,13 +343,13 @@ export default function EditSchedulePage() {
 
               <div>
                 <p className="text-sm font-semibold text-gray-900">
-                  Generate fresh content every cycle
+                  Generate fresh content on persistent servers
                 </p>
 
                 <p className="mt-1 text-xs text-gray-500">
-                  Future runs will automatically create
-                  a fresh Reel instead of reusing the same
-                  content.
+                  Vercel reuses the selected approved Reel to
+                  avoid a timeout. Create and approve a new Reel
+                  before scheduling if you want different content.
                 </p>
               </div>
             </label>

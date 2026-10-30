@@ -20,7 +20,7 @@ export default function AddSchedulePage() {
     repeatEnabled: false,
     repeatEvery: 1,
     repeatUnit: "days",
-    generateNewContent: true,
+    generateNewContent: false,
     autoDeletePrevious: true,
   });
 
@@ -469,13 +469,13 @@ export default function AddSchedulePage() {
 
               <div>
                 <p className="text-sm font-semibold text-gray-900">
-                  Generate fresh content every cycle
+                  Generate fresh content on persistent servers
                 </p>
 
                 <p className="mt-1 text-xs text-gray-500">
-                  A new Reel will be generated
-                  automatically for future runs instead
-                  of repeatedly publishing the same Reel.
+                  Vercel reuses the selected approved Reel to
+                  avoid a timeout. Create and approve a new Reel
+                  before scheduling if you want different content.
                 </p>
               </div>
             </label>

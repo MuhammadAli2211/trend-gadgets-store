@@ -1471,6 +1471,7 @@ const processSchedule =
           $set: {
             status: "processing",
             lastRunAt: new Date(),
+            errorMessage: "",
           },
 
           $inc: {
@@ -1588,12 +1589,21 @@ const processSchedule =
       // FRESH CONTENT FOR REPEAT
       // ----------------------------------------------
 
-      if (
+      const shouldGenerateFreshContent =
         lockedSchedule.repeatEnabled &&
         lockedSchedule.generateNewContent &&
         !lockedSchedule.retryOnlyFailed &&
-        lockedSchedule.runCount > 1
-      ) {
+        lockedSchedule.runCount > 1;
+
+      if (shouldGenerateFreshContent && process.env.VERCEL) {
+        // FFmpeg reel generation can exceed Vercel's 5-minute function limit.
+        // Reuse the selected approved Reel/video so scheduled publishing can
+        // reach Facebook and Instagram reliably. Generate fresh content from
+        // the product page before scheduling when a different Reel is needed.
+        console.warn(
+          "Skipping inline fresh Reel generation on Vercel; reusing the approved scheduled content."
+        );
+      } else if (shouldGenerateFreshContent) {
         console.log(
           "Generating fresh Reel content..."
         );
