@@ -61,24 +61,32 @@ export const uploadProductVideo = async (file, onProgress) => {
   const publicId = String(result?.public_id || "");
   const expectedPublicId = String(signature.publicId || "");
   const expectedUploadId = expectedPublicId.split("/").pop();
-  const allowedPublicIds = new Set([
-    expectedPublicId,
-    expectedUploadId,
-  ]);
+  if (!result?.secure_url) {
+    throw new Error("Cloudinary completed the request but did not return the video URL. Please try an MP4 video or a smaller file.");
+  }
+
   const validVideoUrl = (() => {
     try {
       const url = new URL(result?.secure_url);
+      const pathParts = decodeURIComponent(url.pathname).split("/").filter(Boolean);
+      const deliveredFileName = pathParts.at(-1)?.replace(/\.[^.]+$/, "");
       return url.protocol === "https:" &&
         url.hostname === "res.cloudinary.com" &&
-        url.pathname.startsWith(`/${signature.cloudName}/video/upload/`) &&
-        decodeURIComponent(url.pathname).includes(`/${publicId}.`);
+        pathParts[0] === signature.cloudName &&
+        pathParts[1] === "video" &&
+        pathParts[2] === "upload" &&
+        deliveredFileName === expectedUploadId;
     } catch {
       return false;
     }
   })();
 
-  if (!validVideoUrl || !allowedPublicIds.has(publicId)) {
-    throw new Error("Cloudinary finished uploading but did not return a valid video URL.");
+  if (
+    !validVideoUrl ||
+    publicId.split("/").pop() !== expectedUploadId ||
+    !/^upload-[0-9a-f-]{36}$/i.test(expectedUploadId)
+  ) {
+    throw new Error("Cloudinary returned a video URL that does not match this upload. Please retry the video upload.");
   }
   return { url: result.secure_url, publicId };
 };
