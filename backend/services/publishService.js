@@ -2114,6 +2114,36 @@ const processSchedule =
 const processDueSchedules =
   async () => {
     try {
+      // If a recurring schedule was interrupted before we could confirm any
+      // platform result, do not replay that uncertain post. Move it to its
+      // next regular occurrence so the repeat schedule can continue cleanly.
+      const interruptedRepeatingSchedules = await Schedule.find({
+        status: "failed",
+        repeatEnabled: true,
+        errorMessage: /^Publishing was interrupted before any platform result was saved\./,
+        scheduledAt: { $lte: new Date() },
+      });
+
+      const now = Date.now();
+      for (const schedule of interruptedRepeatingSchedules) {
+        const repeatDays = Math.max(1, Number(schedule.repeatEvery || 7));
+        const intervalMs = repeatDays * 24 * 60 * 60 * 1000;
+        const previousTime = new Date(schedule.scheduledAt).getTime();
+        if (!Number.isFinite(previousTime) || !Number.isFinite(intervalMs)) continue;
+
+        const missedIntervals = Math.floor((now - previousTime) / intervalMs) + 1;
+        schedule.scheduledAt = new Date(previousTime + missedIntervals * intervalMs);
+        schedule.status = "scheduled";
+        schedule.errorMessage = "";
+        schedule.retryOnlyFailed = false;
+        schedule.retryCount = 0;
+        schedule.retryRecoveryApplied = false;
+        await schedule.save();
+        console.log(
+          `Advanced interrupted repeating schedule ${schedule._id} to ${schedule.scheduledAt.toISOString()} without replaying an unconfirmed post.`
+        );
+      }
+
       const recoveryCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const recoverableSchedules = await Schedule.find({
         status: "scheduled",
