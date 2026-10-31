@@ -58,8 +58,27 @@ export const uploadProductVideo = async (file, onProgress) => {
     }
   }
 
-  if (!result?.secure_url || !result.public_id || result.public_id !== signature.publicId) {
+  const publicId = String(result?.public_id || "");
+  const expectedPublicId = String(signature.publicId || "");
+  const expectedUploadId = expectedPublicId.split("/").pop();
+  const allowedPublicIds = new Set([
+    expectedPublicId,
+    expectedUploadId,
+  ]);
+  const validVideoUrl = (() => {
+    try {
+      const url = new URL(result?.secure_url);
+      return url.protocol === "https:" &&
+        url.hostname === "res.cloudinary.com" &&
+        url.pathname.startsWith(`/${signature.cloudName}/video/upload/`) &&
+        decodeURIComponent(url.pathname).includes(`/${publicId}.`);
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!validVideoUrl || !allowedPublicIds.has(publicId)) {
     throw new Error("Cloudinary finished uploading but did not return a valid video URL.");
   }
-  return { url: result.secure_url, publicId: result.public_id };
+  return { url: result.secure_url, publicId };
 };

@@ -80,13 +80,15 @@ const parseUploadedVideoAssets = (rawAssets) => {
     } catch {
       return invalid("Uploaded video details are invalid.");
     }
+    const publicIdPattern = /^upload-[0-9a-f-]{36}$/i;
+    const folderPublicIdPattern = new RegExp(`^${PRODUCT_MEDIA_FOLDER}/upload-[0-9a-f-]{36}$`, "i");
     if (
       typeof publicId !== "string" ||
-      !new RegExp(`^${PRODUCT_MEDIA_FOLDER}/upload-[0-9a-f-]{36}$`, "i").test(publicId) ||
+      (!publicIdPattern.test(publicId) && !folderPublicIdPattern.test(publicId)) ||
       url.protocol !== "https:" ||
       url.hostname !== "res.cloudinary.com" ||
       !url.pathname.startsWith(`/${cloudName}/video/upload/`) ||
-      !url.pathname.includes(`/${publicId}.`)
+      !decodeURIComponent(url.pathname).includes(`/${publicId}.`)
     ) {
       return invalid("Uploaded video does not match a valid product upload.");
     }
