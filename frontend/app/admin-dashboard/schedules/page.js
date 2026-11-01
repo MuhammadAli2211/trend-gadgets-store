@@ -1,29 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import api from "../../../lib/api";
 
 export default function SchedulesPage() {
-const router = useRouter();
-
 const [schedules, setSchedules] = useState([]);
 const [loading, setLoading] = useState(true);
 const [refreshing, setRefreshing] = useState(false);
-const [deletingId, setDeletingId] = useState("");
-const [retryingInstagramId, setRetryingInstagramId] = useState("");
 const [error, setError] = useState("");
-const [currentTime, setCurrentTime] = useState(0);
-
-useEffect(() => {
-  const initialTimeout = setTimeout(() => setCurrentTime(Date.now()), 0);
-  const intervalId = setInterval(() => setCurrentTime(Date.now()), 30_000);
-  return () => {
-    clearTimeout(initialTimeout);
-    clearInterval(intervalId);
-  };
-}, []);
 
 const loadSchedules = async (showLoader = true) => {
 try {
@@ -56,123 +41,6 @@ useEffect(() => {
 const timeoutId = setTimeout(() => loadSchedules(), 0);
 return () => clearTimeout(timeoutId);
 }, []);
-
-// ====================================================
-// CANCEL
-// ====================================================
-
-const cancelSchedule = async (id) => {
-const confirmed = window.confirm(
-"Cancel this schedule?\n\nThe schedule will stop running automatically."
-);
-
-
-if (!confirmed) return;
-
-try {
-  const response = await api.put(
-    `/schedules/${id}/cancel`
-  );
-
-  if (response.data?.success) {
-    await loadSchedules(false);
-  } else {
-    alert(
-      response.data?.message ||
-        "Unable to cancel schedule."
-    );
-  }
-} catch (error) {
-  console.error(
-    "Cancel schedule error:",
-    error
-  );
-
-  alert(
-    error.response?.data?.message ||
-      "Unable to cancel schedule."
-  );
-}
-
-
-};
-
-const retryInstagramForSchedule = async (schedule) => {
-  const facebookPost = (schedule.publishedPosts || []).find(
-    (post) => post.platform === "facebook" && post.success
-  );
-  const facebookPermalink = window.prompt(
-    "Facebook wali live Reel ka link check karein:",
-    facebookPost?.publishedUrl || ""
-  );
-  if (!facebookPermalink) return;
-
-  try {
-    setRetryingInstagramId(schedule._id);
-    const response = await api.post(
-      `/schedules/${schedule._id}/retry-instagram`,
-      { facebookPermalink }
-    );
-    if (response.data?.success) {
-      await loadSchedules(false);
-      window.alert("Facebook post safe mark ho gayi. Ab sirf Instagram retry hoga.");
-    } else {
-      window.alert(response.data?.message || "Instagram retry queue nahi ho saki.");
-    }
-  } catch (retryError) {
-    window.alert(retryError.response?.data?.message || "Instagram retry queue nahi ho saki.");
-  } finally {
-    setRetryingInstagramId("");
-  }
-};
-
-// ====================================================
-// DELETE SCHEDULE
-// ====================================================
-
-const deleteSchedule = async (id) => {
-const confirmed = window.confirm(
-"Delete this schedule?\n\nIf it was published on Facebook or Instagram, that social-media post will also be deleted."
-);
-
-
-if (!confirmed) return;
-
-try {
-  setDeletingId(id);
-
-  const response = await api.delete(
-    `/schedules/${id}`
-  );
-
-  if (response.data?.success) {
-    setSchedules((current) =>
-      current.filter(
-        (item) => item._id !== id
-      )
-    );
-  } else {
-    alert(
-      response.data?.message ||
-        "Unable to delete schedule."
-    );
-  }
-} catch (error) {
-  console.error(
-    "Delete schedule error:",
-    error
-  );
-
-  alert(
-    error.response?.data?.message ||
-      "Unable to delete schedule."
-  );
-} finally {
-  setDeletingId("");
-}
-
-
-};
 
 // ====================================================
 // DATE
@@ -543,8 +411,7 @@ return ( <main className="min-h-screen bg-gray-100">
           </h1>
 
           <p className="mt-1 text-sm text-gray-500">
-            Manually control when your
-            content should be published.
+            Products post to Facebook and Instagram in daytime slots, then repeat every 7 days.
           </p>
         </div>
 
@@ -561,16 +428,6 @@ return ( <main className="min-h-screen bg-gray-100">
               : "↻ Refresh"}
           </button>
 
-          <button
-            onClick={() =>
-              router.push(
-                "/admin-dashboard/schedules/add"
-              )
-            }
-            className="rounded-lg bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-gray-800"
-          >
-            + Create Schedule
-          </button>
         </div>
       </div>
     </div>
@@ -661,20 +518,8 @@ return ( <main className="min-h-screen bg-gray-100">
           </p>
 
           <p className="mt-2 text-sm text-gray-500">
-            Approve some content and
-            create your first schedule.
+            Automatic schedules will appear here when Facebook and Instagram are connected and products have content.
           </p>
-
-          <button
-            onClick={() =>
-              router.push(
-                "/admin-dashboard/schedules/add"
-              )
-            }
-            className="mt-5 rounded-lg bg-black px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-800"
-          >
-            + Create Schedule
-          </button>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -739,19 +584,6 @@ return ( <main className="min-h-screen bg-gray-100">
                   // lastRunAt is refreshed when the worker acquires the
                   // processing lock; currentRunStartedAt may describe an
                   // earlier retry cycle and make a live run look stuck.
-                  const stuckSince = new Date(schedule.lastRunAt || 0).getTime();
-                  const facebookConfirmed = publishedPosts.some(
-                    (post) => post.platform === "facebook" && post.success && post.postId
-                  );
-                  const instagramConfirmed = publishedPosts.some(
-                    (post) => post.platform === "instagram" && post.success
-                  );
-                  const canRecoverInstagram =
-                    ["processing", "failed"].includes(schedule.status) &&
-                    !instagramConfirmed && facebookConfirmed &&
-                    stuckSince > 0 && currentTime - stuckSince >= 6 * 60 * 1000 &&
-                    platforms.includes("facebook") && platforms.includes("instagram");
-
                   return (
                     <tr
                       key={
@@ -981,16 +813,6 @@ return ( <main className="min-h-screen bg-gray-100">
                             </p>
                           </div>
                         )}
-                        {canRecoverInstagram && (
-                          <button
-                            type="button"
-                            onClick={() => retryInstagramForSchedule(schedule)}
-                            disabled={retryingInstagramId === schedule._id}
-                            className="mt-3 rounded-lg bg-pink-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                          >
-                            {retryingInstagramId === schedule._id ? "Queueing…" : "Retry Instagram only"}
-                          </button>
-                        )}
                       </td>
 
                       {/* PUBLISHED */}
@@ -1098,34 +920,10 @@ return ( <main className="min-h-screen bg-gray-100">
 
                       <td className="px-5 py-5">
                         <div className="flex min-w-[135px] flex-col gap-2">
-                          {schedule.status ===
-                            "scheduled" ||
-                          schedule.status ===
-                            "failed" ? (
-                            <button
-                              onClick={() =>
-                                router.push(
-                                  `/admin-dashboard/schedules/edit/${schedule._id}`
-                                )
-                              }
-                              className="rounded-md border bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                            >
-                              Edit
-                            </button>
-                          ) : null}
-
-                          {schedule.status ===
-                            "scheduled" && (
-                            <button
-                              onClick={() =>
-                                cancelSchedule(
-                                  schedule._id
-                                )
-                              }
-                              className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
-                            >
-                              Cancel
-                            </button>
+                          {schedule.autoManaged && schedule.status === "scheduled" && (
+                            <span className="rounded-md bg-blue-50 px-3 py-2 text-center text-xs font-semibold text-blue-700">
+                              Automatic
+                            </span>
                           )}
 
                           {schedule.status ===
@@ -1153,15 +951,6 @@ return ( <main className="min-h-screen bg-gray-100">
                             </span>
                           )}
 
-                          {schedule.status !== "processing" && (
-                            <button
-                              onClick={() => deleteSchedule(schedule._id)}
-                              disabled={deletingId === schedule._id}
-                              className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {deletingId === schedule._id ? "Deleting..." : "Delete"}
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>

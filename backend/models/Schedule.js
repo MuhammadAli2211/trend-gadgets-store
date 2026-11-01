@@ -118,6 +118,11 @@ const scheduleSchema = new mongoose.Schema(
       default: false,
     },
 
+    autoManaged: {
+      type: Boolean,
+      default: false,
+    },
+
     autoDeletePrevious: {
       type: Boolean,
       default: true,
@@ -228,6 +233,14 @@ scheduleSchema.index({
   platform: 1,
   content: 1,
 });
+
+scheduleSchema.index(
+  { content: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { autoManaged: true },
+  }
+);
 
 module.exports = mongoose.model(
   "Schedule",

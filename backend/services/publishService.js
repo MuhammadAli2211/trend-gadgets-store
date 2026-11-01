@@ -6,9 +6,11 @@ const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
 const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
+const { ensureAutomaticSchedules } = require("./automaticScheduleService");
 
 const {
   generateProductImageReelAsset,
+  deleteGeneratedReelAsset,
 } = require("./reelContentService");
 
 const META_GRAPH_VERSION =
@@ -1604,9 +1606,27 @@ const processSchedule =
         };
         content.generatedAutomatically = true;
         await content.save();
+      } else if (
+        lockedSchedule.generateNewContent &&
+        lockedSchedule.repeatEnabled &&
+        lockedSchedule.runCount > 1 &&
+        !lockedSchedule.retryOnlyFailed &&
+        content.generatedAutomatically
+      ) {
+        // Refresh image-based media weekly in the same Content record, so
+        // each repost is fresh without creating another content card.
+        const oldMedia = content.media;
+        const generatedMedia = await generateProductImageReelAsset(product);
+        content.type = "reel";
+        content.media = generatedMedia;
+        content.generatedAutomatically = true;
+        await content.save();
+        if (oldMedia?.publicId !== generatedMedia.publicId) {
+          await deleteGeneratedReelAsset(oldMedia);
+        }
       } else if (content.type !== "reel" || content.media?.resourceType !== "video") {
-        // Convert older image-post schedules once, then reuse the stored Reel
-        // on every repeat instead of generating duplicate content each week.
+        // Convert older image-post schedules once, then use the stored Reel
+        // until its next automatic weekly refresh.
         const generatedMedia = await generateProductImageReelAsset(product);
         content.type = "reel";
         content.media = generatedMedia;
@@ -1651,17 +1671,6 @@ const processSchedule =
       console.log(
         "======================================"
       );
-
-      // ----------------------------------------------
-      // FRESH CONTENT FOR REPEAT
-      // ----------------------------------------------
-
-      // Keep one approved Reel per product and reuse it on repeat schedules.
-      // Fresh-per-cycle Reel creation made duplicate content and could time out.
-      if (lockedSchedule.generateNewContent) {
-        lockedSchedule.generateNewContent = false;
-        await lockedSchedule.save();
-      }
 
       // ----------------------------------------------
       // PUBLISH ALL PLATFORMS
@@ -2130,6 +2139,15 @@ const processSchedule =
 const processDueSchedules =
   async () => {
     try {
+      try {
+        const autoScheduleResult = await ensureAutomaticSchedules();
+        if (autoScheduleResult?.created || autoScheduleResult?.updated) {
+          console.log("Automatic product schedules refreshed:", autoScheduleResult);
+        }
+      } catch (autoScheduleError) {
+        console.error("Automatic schedule setup failed; processing existing due schedules:", autoScheduleError.message);
+      }
+
       // If a recurring schedule was interrupted before we could confirm any
       // platform result, do not replay that uncertain post. Move it to its
       // next regular occurrence so the repeat schedule can continue cleanly.

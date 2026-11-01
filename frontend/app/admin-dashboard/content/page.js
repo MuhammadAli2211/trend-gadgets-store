@@ -551,79 +551,6 @@ export default function ContentManagementPage() {
   };
 
   // =====================================================
-  // SCHEDULE MANAGEMENT
-  // =====================================================
-
-  const cancelSchedule = async (schedule) => {
-    if (!schedule?._id) {
-      return;
-    }
-
-    const confirmed =
-      window.confirm(
-        "Cancel this schedule?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-
-      await api.put(
-        `/schedules/${schedule._id}/cancel`
-      );
-
-      await loadEverything();
-    } catch (error) {
-      console.error(
-        "Cancel schedule error:",
-        error
-      );
-
-      setError(
-        error?.response?.data?.message ||
-          "Unable to cancel schedule."
-      );
-    }
-  };
-
-  const deleteCancelledSchedule =
-    async (schedule) => {
-      if (!schedule?._id) {
-        return;
-      }
-
-      const confirmed =
-        window.confirm(
-          "Remove this cancelled schedule?"
-        );
-
-      if (!confirmed) {
-        return;
-      }
-
-      try {
-
-        await api.delete(
-          `/schedules/${schedule._id}`
-        );
-
-        await loadEverything();
-      } catch (error) {
-        console.error(
-          "Delete schedule error:",
-          error
-        );
-
-        setError(
-          error?.response?.data?.message ||
-            "Unable to delete cancelled schedule."
-        );
-      }
-    };
-
-  // =====================================================
   // RENDER
   // =====================================================
 
@@ -663,16 +590,6 @@ export default function ContentManagementPage() {
                   : "↻ Refresh"}
               </button>
 
-              <button
-                onClick={() =>
-                  router.push(
-                    "/admin-dashboard/schedules/add"
-                  )
-                }
-              className="w-full rounded-lg bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-gray-800 sm:w-auto sm:px-5"
-              >
-                + Create Schedule
-              </button>
             </div>
           </div>
         </div>
@@ -858,22 +775,6 @@ export default function ContentManagementPage() {
                   <div className="col-span-2 flex w-full flex-wrap items-center gap-2 sm:col-span-1 sm:w-auto sm:shrink-0">
                     {["draft", "generated"].includes(content.status) && (
                       <button onClick={() => approveContent(content)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Approve</button>
-                    )}
-                    {content.status === "approved" && (
-                      <button
-                        onClick={() => {
-                          window.sessionStorage.setItem(
-                            "cart2door-schedule-content",
-                            content._id
-                          );
-                          router.push(
-                            `/admin-dashboard/schedules/add?content=${content._id}`
-                          );
-                        }}
-                        className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-700"
-                      >
-                        Schedule
-                      </button>
                     )}
                     {content.publishedUrl && (
                       <button onClick={() => openPublishedPost({ publishedUrl: content.publishedUrl, postId: content.publishedPostId, platform: content.platform })} className="rounded-lg border px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">View post</button>
@@ -1107,16 +1008,9 @@ export default function ContentManagementPage() {
                         </p>
                       </div>
 
-                      <button
-                        onClick={() =>
-                          router.push(
-                            `/admin-dashboard/schedules/edit/${failure.scheduleId}`
-                          )
-                        }
-                        className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                      >
-                        Open Schedule
-                      </button>
+                      <span className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700">
+                        Automatic retry enabled
+                      </span>
                     </div>
 
                     <div className="mt-4 rounded-xl border border-red-100 bg-red-50 p-4">
@@ -1162,8 +1056,7 @@ export default function ContentManagementPage() {
               </h2>
 
               <p className="text-sm text-gray-500">
-                Edit, cancel and manage scheduled
-                publishing.
+                View automatic Facebook and Instagram publishing and the next run time.
               </p>
             </div>
 
@@ -1182,7 +1075,7 @@ export default function ContentManagementPage() {
           <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
             {visibleSchedules.length === 0 ? (
               <div className="p-12 text-center text-gray-500">
-                No schedules available.
+                Automatic schedules will appear once Facebook and Instagram are connected and product content is approved.
               </div>
             ) : (
               <>
@@ -1213,9 +1106,6 @@ export default function ContentManagementPage() {
                       </div>
                       {schedule.errorMessage && <p className="mt-2 break-words text-xs text-red-600">{schedule.errorMessage}</p>}
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {(schedule.status === "scheduled" || schedule.status === "failed") && <button onClick={() => router.push(`/admin-dashboard/schedules/edit/${schedule._id}`)} className="min-h-10 flex-1 rounded-lg border px-3 py-2 text-xs font-semibold text-gray-700">Edit</button>}
-                        {schedule.status === "scheduled" && <button onClick={() => cancelSchedule(schedule)} className="min-h-10 flex-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white">Cancel</button>}
-                        {schedule.status === "cancelled" && <button onClick={() => deleteCancelledSchedule(schedule)} className="min-h-10 flex-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">Remove</button>}
                         {schedule.status === "published" && <span className="rounded-lg bg-green-50 px-3 py-2 text-xs font-semibold text-green-700">Published</span>}
                         {schedule.status === "processing" && <span className="rounded-lg bg-yellow-50 px-3 py-2 text-xs font-semibold text-yellow-700">Processing...</span>}
                       </div>
@@ -1382,48 +1272,10 @@ export default function ContentManagementPage() {
 
                             <td className="px-5 py-5">
                               <div className="flex min-w-[130px] flex-col gap-2">
-                                {(schedule.status ===
-                                  "scheduled" ||
-                                  schedule.status ===
-                                    "failed") && (
-                                  <button
-                                    onClick={() =>
-                                      router.push(
-                                        `/admin-dashboard/schedules/edit/${schedule._id}`
-                                      )
-                                    }
-                                    className="rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                                  >
-                                    Edit
-                                  </button>
-                                )}
-
-                                {schedule.status ===
-                                  "scheduled" && (
-                                  <button
-                                    onClick={() =>
-                                      cancelSchedule(
-                                        schedule
-                                      )
-                                    }
-                                    className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
-                                  >
-                                    Cancel
-                                  </button>
-                                )}
-
-                                {schedule.status ===
-                                  "cancelled" && (
-                                  <button
-                                    onClick={() =>
-                                      deleteCancelledSchedule(
-                                        schedule
-                                      )
-                                    }
-                                    className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
-                                  >
-                                    Remove
-                                  </button>
+                                {schedule.autoManaged && schedule.status === "scheduled" && (
+                                  <span className="rounded-lg bg-blue-50 px-3 py-2 text-center text-xs font-semibold text-blue-700">
+                                    Automatic
+                                  </span>
                                 )}
 
                                 {schedule.status ===

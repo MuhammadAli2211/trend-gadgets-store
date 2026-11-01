@@ -80,6 +80,10 @@ Connect Facebook and Instagram from the admin dashboard. OAuth start routes requ
 
 Instagram's old-post cleanup needs a Facebook Page token granted through a Facebook Login for Business configuration. Configure the required Meta permissions, set `META_LOGIN_CONFIG_ID` to that configuration ID (not the App ID), and reconnect Facebook. Instagram publishing and Insights use the separate Instagram connection; reconnect after enabling its required scopes.
 
+## Automatic product schedule
+
+When both Facebook and Instagram are connected, the schedule worker automatically assigns each active product's approved Reel to a daytime slot between 09:00 and 18:00 Pakistan time, keeping at least one hour between recurring slots. Each item targets both platforms, repeats every seven days, and deletes its prior post before publishing again. Image-generated Reels are refreshed in the existing content record on the weekly cycle; a seller-uploaded product video is reused. Manual schedule creation and editing are disabled.
+
 ## Main API areas
 
 - `/api/auth`: signup, login, profile

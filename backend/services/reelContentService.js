@@ -129,6 +129,17 @@ const generateProductImageReelAsset = async (product) => {
   }
 };
 
+const deleteGeneratedReelAsset = async (asset) => {
+  if (!asset?.publicId) return;
+  try {
+    await cloudinary.uploader.destroy(asset.publicId, {
+      resource_type: asset.resourceType || "video",
+    });
+  } catch (error) {
+    console.error("Old generated Reel cleanup warning:", error.message);
+  }
+};
+
 // =========================
 // CREATE FRESH REEL CONTENT
 // =========================
@@ -274,5 +285,6 @@ const generateFreshReelContent = async ({
 module.exports = {
   generateFreshReelContent,
   generateProductImageReelAsset,
+  deleteGeneratedReelAsset,
   uploadReelToCloudinary,
 };
