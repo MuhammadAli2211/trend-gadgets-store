@@ -224,28 +224,23 @@ const ensureAutomaticSchedules = async () => {
   const activeAutomaticSchedules = await Schedule.find({
     autoManaged: true,
     status: "scheduled",
-  }).sort({ scheduledAt: 1, _id: 1 });
-  const normalizedTimes = [];
-  for (const schedule of activeAutomaticSchedules) {
-    const currentTime = new Date(schedule.scheduledAt).getTime();
+  });
+  const normalizationPlans = activeAutomaticSchedules.map((schedule) => {
     const publishedTimes = [
       schedule.publishedAt,
       ...(schedule.publishedPosts || []).map((post) => post.success ? post.publishedAt : null),
     ].filter(Boolean).map((timestamp) => new Date(timestamp).getTime()).filter(Number.isFinite);
     const lastPublishedAt = publishedTimes.length ? Math.max(...publishedTimes) : 0;
-    const notBefore = Math.max(
-      Date.now(),
-      lastPublishedAt ? lastPublishedAt + 7 * DAY_MS : 0,
-      Number.isFinite(currentTime) && currentTime > Date.now() ? currentTime : 0
-    );
-    const canKeepCurrent =
-      Number.isFinite(currentTime) &&
-      currentTime >= notBefore &&
-      isPostingHour(new Date(currentTime)) &&
-      weeklyGapIsFree(currentTime, normalizedTimes);
-    const nextTime = canKeepCurrent
-      ? new Date(currentTime)
-      : findNextFreePostingSlot(notBefore, normalizedTimes);
+    return {
+      schedule,
+      notBefore: Math.max(Date.now(), lastPublishedAt ? lastPublishedAt + 7 * DAY_MS : 0),
+    };
+  }).sort((a, b) => a.notBefore - b.notBefore || String(a.schedule._id).localeCompare(String(b.schedule._id)));
+  const normalizedTimes = [];
+  for (const plan of normalizationPlans) {
+    const { schedule, notBefore } = plan;
+    const currentTime = new Date(schedule.scheduledAt).getTime();
+    const nextTime = findNextFreePostingSlot(notBefore, normalizedTimes);
 
     if (!nextTime) {
       deferred += 1;
