@@ -215,6 +215,61 @@ const ensureAutomaticSchedules = async () => {
     }
   }
 
+  // Reconcile every active automatic schedule as a final safety pass. Some
+  // older schedules can be missing from the product/content planning pass
+  // (for example, if their content is no longer eligible), but they still
+  // must respect the daytime posting window and one-hour spacing.
+  const activeAutomaticSchedules = await Schedule.find({
+    autoManaged: true,
+    status: "scheduled",
+  }).sort({ scheduledAt: 1, _id: 1 });
+  const normalizedTimes = [];
+  for (const schedule of activeAutomaticSchedules) {
+    const currentTime = new Date(schedule.scheduledAt).getTime();
+    const publishedTimes = [
+      schedule.publishedAt,
+      ...(schedule.publishedPosts || []).map((post) => post.success ? post.publishedAt : null),
+    ].filter(Boolean).map((timestamp) => new Date(timestamp).getTime()).filter(Number.isFinite);
+    const lastPublishedAt = publishedTimes.length ? Math.max(...publishedTimes) : 0;
+    const notBefore = Math.max(
+      Date.now(),
+      lastPublishedAt ? lastPublishedAt + 7 * DAY_MS : 0,
+      Number.isFinite(currentTime) && currentTime > Date.now() ? currentTime : 0
+    );
+    const canKeepCurrent =
+      Number.isFinite(currentTime) &&
+      currentTime >= notBefore &&
+      isPostingHour(new Date(currentTime)) &&
+      weeklyGapIsFree(currentTime, normalizedTimes);
+    const nextTime = canKeepCurrent
+      ? new Date(currentTime)
+      : findNextFreePostingSlot(notBefore, normalizedTimes);
+
+    if (!nextTime) {
+      deferred += 1;
+      continue;
+    }
+
+    if (nextTime.getTime() !== currentTime) {
+      schedule.scheduledAt = nextTime;
+      schedule.repeatEnabled = true;
+      schedule.repeatEvery = 7;
+      schedule.repeatUnit = "days";
+      schedule.generateNewContent = true;
+      schedule.autoDeletePrevious = true;
+      schedule.platforms = ["facebook", "instagram"];
+      schedule.platform = "facebook";
+      schedule.errorMessage = "";
+      schedule.retryOnlyFailed = false;
+      schedule.retryCount = 0;
+      schedule.retryForScheduledAt = null;
+      await schedule.save();
+      updated += 1;
+    }
+
+    normalizedTimes.push(nextTime.getTime());
+  }
+
   return { created, updated, cancelledDuplicates, deferred, products: plans.length };
 };
 
