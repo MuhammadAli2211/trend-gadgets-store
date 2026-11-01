@@ -6,7 +6,9 @@ const SocialAccount = require("../models/SocialAccount");
 const PAKISTAN_OFFSET_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const POSTING_HOURS = Array.from({ length: 10 }, (_, index) => index + 9);
+// 8:00 AM–7:00 PM Pakistan time provides 84 weekly hourly slots, enough for
+// the current 81 active products to repeat every 7 days without collisions.
+const POSTING_HOURS = Array.from({ length: 12 }, (_, index) => index + 8);
 
 const toPakistanParts = (date) => {
   const shifted = new Date(date.getTime() + PAKISTAN_OFFSET_MS);

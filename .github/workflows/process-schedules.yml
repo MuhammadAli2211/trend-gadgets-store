@@ -1,10 +1,10 @@
 name: Process scheduled social posts
 
 on:
-  # Pakistan daytime (09:00–18:45 PKT), every 15 minutes.
+  # Pakistan daytime (08:00–19:45 PKT), every 15 minutes.
   # GitHub schedule times are UTC; Pakistan is UTC+5.
   schedule:
-    - cron: "*/15 4-13 * * *"
+    - cron: "*/15 3-14 * * *"
   workflow_dispatch:
 
 permissions: {}
