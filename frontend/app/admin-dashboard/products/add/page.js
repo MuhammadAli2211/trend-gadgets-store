@@ -118,7 +118,7 @@ export default function AddProductPage() {
         }));
       }
       setUploadStatus(videos.length
-        ? "Saving product and preparing its Reel from your video…"
+        ? "Saving product and setting up your video Reel…"
         : "Saving product and creating a music Reel from its photos…");
       const data = new FormData();
       Object.entries(form).forEach(([key, value]) => data.append(key, value));

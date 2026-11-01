@@ -4,7 +4,7 @@ const Order = require("../models/Order");
 const cloudinary = require("../config/cloudinary");
 const { createProductSocialCaption } = require("../utils/socialCaption");
 const { generateProductImageReelAsset } = require("../services/reelContentService");
-const { ensureAutomaticSchedules } = require("../services/automaticScheduleService");
+const { ensureAutomaticScheduleForContent } = require("../services/automaticScheduleService");
 const crypto = require("crypto");
 
 const streamifier = require("streamifier");
@@ -272,7 +272,7 @@ const createProduct = async (req, res) => {
         : await generateProductImageReelAsset(product);
     uploadedSocialMedia = reelMedia;
 
-    await Content.create({
+    const reelContent = await Content.create({
       product: product._id,
       type: "reel",
       platform: "all",
@@ -288,9 +288,9 @@ const createProduct = async (req, res) => {
     });
 
     try {
-      await ensureAutomaticSchedules();
+      await ensureAutomaticScheduleForContent(reelContent);
     } catch (scheduleError) {
-      console.error("Automatic scheduling will retry in the background:", scheduleError.message);
+      console.error("Product saved; automatic scheduling will retry in the background:", scheduleError.message);
     }
 
     res.status(201).json({

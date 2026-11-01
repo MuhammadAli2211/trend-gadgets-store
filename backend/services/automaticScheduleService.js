@@ -287,4 +287,52 @@ const ensureAutomaticSchedules = async () => {
   return { created, updated, cancelledDuplicates, deferred, products: plans.length };
 };
 
-module.exports = { ensureAutomaticSchedules };
+// Add a newly-created product without reconciling every existing product
+// schedule inside the product-save request. The full reconciliation still
+// runs from the schedule worker/cron; this creates the new product's slot
+// immediately with the same daytime and repeat rules.
+const ensureAutomaticScheduleForContent = async (content) => {
+  const [connectedFacebook, connectedInstagram] = await Promise.all([
+    SocialAccount.exists({ platform: "facebook", status: "connected" }),
+    SocialAccount.exists({ platform: "instagram", status: "connected" }),
+  ]);
+  if (!connectedFacebook || !connectedInstagram) {
+    return { skipped: true, reason: "Connect both Facebook and Instagram to start automatic scheduling." };
+  }
+
+  const productCount = await Product.countDocuments({ isActive: { $ne: false }, deletedAt: null });
+  const repeatEveryDays = Math.max(MIN_REPEAT_DAYS, Math.ceil(productCount / POSTING_HOURS.length));
+  const occupiedSchedules = await Schedule.find({
+    $or: [
+      { autoManaged: true, status: "scheduled", scheduledAt: { $gt: new Date() } },
+      { status: "processing" },
+    ],
+  }).select("scheduledAt lastRunAt status");
+  const occupiedTimes = occupiedSchedules.map((schedule) => new Date(
+    schedule.status === "processing" ? schedule.lastRunAt || schedule.scheduledAt : schedule.scheduledAt
+  ).getTime()).filter(Number.isFinite);
+  const scheduledAt = findNextFreePostingSlot(Date.now(), occupiedTimes, repeatEveryDays);
+  if (!scheduledAt) throw new Error("No available automatic posting slot was found.");
+
+  const schedule = new Schedule({
+    content: content._id,
+    createdBy: content.createdBy,
+    platforms: ["facebook", "instagram"],
+    platform: "facebook",
+    scheduledAt,
+    repeatEnabled: true,
+    repeatEvery: repeatEveryDays,
+    repeatUnit: "days",
+    generateNewContent: true,
+    autoDeletePrevious: true,
+    autoManaged: true,
+    status: "scheduled",
+    errorMessage: "",
+  });
+  await schedule.save();
+  content.status = "scheduled";
+  await content.save();
+  return { created: 1, scheduleId: schedule._id, scheduledAt, repeatEveryDays };
+};
+
+module.exports = { ensureAutomaticSchedules, ensureAutomaticScheduleForContent };
