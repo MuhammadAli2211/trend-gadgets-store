@@ -6,6 +6,7 @@ const SocialAccount = require("../models/SocialAccount");
 const PAKISTAN_OFFSET_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
+const MIN_REPEAT_DAYS = 7;
 // 8:00 AM–7:00 PM Pakistan time provides 84 weekly hourly slots, enough for
 // the current 81 active products to repeat every 7 days without collisions.
 const POSTING_HOURS = Array.from({ length: 12 }, (_, index) => index + 8);
@@ -26,16 +27,16 @@ const isPostingHour = (date) => {
   return POSTING_HOURS.includes(hour) && minute === 0;
 };
 
-const weeklyGapIsFree = (candidate, occupiedTimes) => {
-  const weekMs = 7 * DAY_MS;
+const recurringGapIsFree = (candidate, occupiedTimes, repeatDays) => {
+  const cycleMs = Math.max(MIN_REPEAT_DAYS, Number(repeatDays) || MIN_REPEAT_DAYS) * DAY_MS;
   return occupiedTimes.every((time) => {
-    const rawGap = Math.abs(time - candidate) % weekMs;
-    const recurringGap = Math.min(rawGap, weekMs - rawGap);
+    const rawGap = Math.abs(time - candidate) % cycleMs;
+    const recurringGap = Math.min(rawGap, cycleMs - rawGap);
     return recurringGap >= HOUR_MS;
   });
 };
 
-const findNextFreePostingSlot = (notBefore, occupiedTimes) => {
+const findNextFreePostingSlot = (notBefore, occupiedTimes, repeatDays) => {
   const minimum = Math.max(Date.now(), new Date(notBefore || Date.now()).getTime());
   const pakistanDate = toPakistanParts(new Date(minimum));
   const firstDayUtc = Date.UTC(pakistanDate.year, pakistanDate.month, pakistanDate.day);
@@ -44,7 +45,7 @@ const findNextFreePostingSlot = (notBefore, occupiedTimes) => {
     for (const hour of POSTING_HOURS) {
       const candidate = firstDayUtc + day * DAY_MS + hour * HOUR_MS - PAKISTAN_OFFSET_MS;
       if (candidate < minimum) continue;
-      if (!weeklyGapIsFree(candidate, occupiedTimes)) continue;
+      if (!recurringGapIsFree(candidate, occupiedTimes, repeatDays)) continue;
       return new Date(candidate);
     }
   }
@@ -63,6 +64,7 @@ const ensureAutomaticSchedules = async () => {
     .sort({ createdAt: 1, _id: 1 })
     .select("_id createdAt");
   if (!products.length) return { created: 0, updated: 0, cancelledDuplicates: 0 };
+  const repeatEveryDays = Math.max(MIN_REPEAT_DAYS, Math.ceil(products.length / POSTING_HOURS.length));
 
   const productIds = products.map((product) => product._id);
   const allContent = await Content.find({ product: { $in: productIds } })
@@ -118,13 +120,16 @@ const ensureAutomaticSchedules = async () => {
     if (!content) return null;
 
     const lastProductPostAt = productSchedules.reduce((latest, schedule) => {
-      const timestamps = [schedule.publishedAt, ...(schedule.publishedPosts || []).map((post) => post.publishedAt)];
+      const timestamps = [
+        schedule.publishedAt,
+        ...(schedule.publishedPosts || []).filter((post) => post.success).map((post) => post.publishedAt),
+      ];
       return timestamps.reduce((maxTime, timestamp) => {
         const value = timestamp ? new Date(timestamp).getTime() : 0;
         return Number.isFinite(value) ? Math.max(maxTime, value) : maxTime;
       }, latest);
     }, 0);
-    const repeatStart = lastProductPostAt ? lastProductPostAt + 7 * DAY_MS : Date.now();
+    const repeatStart = lastProductPostAt ? lastProductPostAt + repeatEveryDays * DAY_MS : Date.now();
     const oldTime = reusableSchedule?.scheduledAt ? new Date(reusableSchedule.scheduledAt).getTime() : 0;
     const notBefore = Math.max(Date.now(), repeatStart, scheduled && oldTime > Date.now() ? oldTime : 0);
     return { productId, content, schedules: productSchedules, reusableSchedule, notBefore };
@@ -145,7 +150,7 @@ const ensureAutomaticSchedules = async () => {
       scheduledAt = new Date(current.scheduledAt);
       occupiedTimes.push(scheduledAt.getTime());
     } else {
-      scheduledAt = findNextFreePostingSlot(plan.notBefore, occupiedTimes);
+      scheduledAt = findNextFreePostingSlot(plan.notBefore, occupiedTimes, repeatEveryDays);
       if (!scheduledAt) {
         deferred += 1;
         continue;
@@ -169,7 +174,7 @@ const ensureAutomaticSchedules = async () => {
     target.platform = "facebook";
     target.scheduledAt = scheduledAt;
     target.repeatEnabled = true;
-    target.repeatEvery = 7;
+    target.repeatEvery = repeatEveryDays;
     target.repeatUnit = "days";
     target.generateNewContent = true;
     target.autoDeletePrevious = true;
@@ -233,14 +238,14 @@ const ensureAutomaticSchedules = async () => {
     const lastPublishedAt = publishedTimes.length ? Math.max(...publishedTimes) : 0;
     return {
       schedule,
-      notBefore: Math.max(Date.now(), lastPublishedAt ? lastPublishedAt + 7 * DAY_MS : 0),
+      notBefore: Math.max(Date.now(), lastPublishedAt ? lastPublishedAt + repeatEveryDays * DAY_MS : 0),
     };
   }).sort((a, b) => a.notBefore - b.notBefore || String(a.schedule._id).localeCompare(String(b.schedule._id)));
   const normalizedTimes = [];
   for (const plan of normalizationPlans) {
     const { schedule, notBefore } = plan;
     const currentTime = new Date(schedule.scheduledAt).getTime();
-    const nextTime = findNextFreePostingSlot(notBefore, normalizedTimes);
+    const nextTime = findNextFreePostingSlot(notBefore, normalizedTimes, repeatEveryDays);
 
     if (!nextTime) {
       deferred += 1;
@@ -249,7 +254,7 @@ const ensureAutomaticSchedules = async () => {
 
     const policyNeedsUpdate =
       schedule.repeatEnabled !== true ||
-      Number(schedule.repeatEvery) !== 7 ||
+      Number(schedule.repeatEvery) !== repeatEveryDays ||
       schedule.repeatUnit !== "days" ||
       schedule.generateNewContent !== true ||
       schedule.autoDeletePrevious !== true ||
@@ -262,7 +267,7 @@ const ensureAutomaticSchedules = async () => {
     if (nextTime.getTime() !== currentTime || policyNeedsUpdate) {
       schedule.scheduledAt = nextTime;
       schedule.repeatEnabled = true;
-      schedule.repeatEvery = 7;
+      schedule.repeatEvery = repeatEveryDays;
       schedule.repeatUnit = "days";
       schedule.generateNewContent = true;
       schedule.autoDeletePrevious = true;

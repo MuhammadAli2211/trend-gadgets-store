@@ -9,6 +9,8 @@ const [schedules, setSchedules] = useState([]);
 const [loading, setLoading] = useState(true);
 const [refreshing, setRefreshing] = useState(false);
 const [error, setError] = useState("");
+const [scheduleSearch, setScheduleSearch] = useState("");
+const [statusFilter, setStatusFilter] = useState("all");
 
 const loadSchedules = async (showLoader = true) => {
 try {
@@ -394,6 +396,19 @@ schedules.filter(
 item.status === "cancelled"
 ).length;
 
+const automaticSchedules = schedules.filter((item) => item.autoManaged && item.status === "scheduled");
+const repeatCadenceDays = automaticSchedules.reduce(
+  (max, item) => Math.max(max, Number(item.repeatEvery) || 7),
+  Math.max(7, Math.ceil(automaticSchedules.length / 12))
+);
+const remainingSlotsAtCurrentCadence = Math.max(0, repeatCadenceDays * 12 - automaticSchedules.length);
+const filteredSchedules = schedules.filter((item) => {
+  const productName = getProductName(item).toLowerCase();
+  const caption = getContentCaption(item).toLowerCase();
+  const matchesSearch = `${productName} ${caption}`.includes(scheduleSearch.trim().toLowerCase());
+  return matchesSearch && (statusFilter === "all" || item.status === statusFilter);
+});
+
 // ====================================================
 // UI
 // ====================================================
@@ -411,7 +426,10 @@ return ( <main className="min-h-screen bg-gray-100">
           </h1>
 
           <p className="mt-1 text-sm text-gray-500">
-            Products post to Facebook and Instagram in daytime slots, then repeat every 7 days.
+            Facebook + Instagram • one post each hour, 8 AM–7 PM • repeats every {repeatCadenceDays} days.
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            {remainingSlotsAtCurrentCadence} more products fit at this pace before the repeat cycle increases automatically.
           </p>
         </div>
 
@@ -449,7 +467,7 @@ return ( <main className="min-h-screen bg-gray-100">
 
       <div className="rounded-xl border bg-white p-4 shadow-sm">
         <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-          Published
+          Published once
         </p>
 
         <p className="mt-1 text-2xl font-bold text-green-600">
@@ -522,7 +540,88 @@ return ( <main className="min-h-screen bg-gray-100">
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div className="grid gap-3 border-b p-4 sm:grid-cols-[minmax(0,1fr)_220px_auto] sm:items-center">
+          <input
+            type="search"
+            value={scheduleSearch}
+            onChange={(event) => setScheduleSearch(event.target.value)}
+            placeholder="Search product or caption"
+            aria-label="Search schedules"
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          />
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            aria-label="Filter schedules by status"
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="all">All statuses</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="processing">Processing</option>
+            <option value="published">Published</option>
+            <option value="failed">Failed</option>
+            <option value="manual_required">Needs manual share</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <p className="text-sm text-gray-500 sm:text-right">
+            Showing <span className="font-semibold text-gray-800">{filteredSchedules.length}</span> of {schedules.length}
+          </p>
+        </div>
+
+        {filteredSchedules.length === 0 ? (
+          <div className="p-10 text-center text-sm text-gray-500">No schedules match your search.</div>
+        ) : (
+          <>
+          <div className="divide-y md:hidden">
+            {filteredSchedules.map((schedule) => {
+              const platforms = getPlatforms(schedule);
+              const publishedPosts = getPublishedPosts(schedule);
+              const hasPreviousFailure = publishedPosts.some((post) => !post.success && !post.manualRequired);
+              return (
+                <article key={schedule._id} className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="truncate text-base font-semibold text-gray-900">{getProductName(schedule)}</h2>
+                      {schedule?.content?.product?.price !== undefined && (
+                        <p className="mt-1 text-sm text-gray-500">Rs. {schedule.content.product.price}</p>
+                      )}
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(schedule.status)}`}>
+                      {getStatusLabel(schedule.status)}
+                    </span>
+                  </div>
+
+                  <p className="line-clamp-2 text-sm leading-5 text-gray-600">{getContentCaption(schedule)}</p>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {platforms.map((platform) => (
+                      <span key={platform} className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getPlatformClass(platform)}`}>
+                        {getPlatformLabel(platform)}
+                      </span>
+                    ))}
+                    <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">{getRepeatText(schedule)}</span>
+                  </div>
+
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Next post</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900">{formatDate(schedule.scheduledAt)}</p>
+                    {schedule.autoDeletePrevious && <p className="mt-1 text-xs text-gray-500">Old post is set to be removed before reposting.</p>}
+                  </div>
+
+                  {schedule.status === "scheduled" && hasPreviousFailure && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                      A previous attempt failed. This schedule is active and will run at the next time shown above.
+                    </p>
+                  )}
+                  {schedule.errorMessage && <p className="rounded-lg bg-red-50 p-3 text-xs leading-5 text-red-700">{schedule.errorMessage}</p>}
+                  <p className="text-xs text-gray-500">{schedule.runCount || 0} previous runs</p>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1500px]">
             <thead className="border-b bg-gray-50">
               <tr>
@@ -565,7 +664,7 @@ return ( <main className="min-h-screen bg-gray-100">
             </thead>
 
             <tbody>
-              {schedules.map(
+              {filteredSchedules.map(
                 (schedule) => {
                   const mediaUrl =
                     getMediaUrl(
@@ -711,8 +810,8 @@ return ( <main className="min-h-screen bg-gray-100">
 
                                     {published &&
                                       !published.success && !published.manualRequired && (
-                                        <span className="text-[10px] font-medium text-red-600">
-                                          ✕ Failed
+                                        <span className={`text-[10px] font-medium ${schedule.status === "scheduled" ? "text-amber-700" : "text-red-600"}`}>
+                                          {schedule.status === "scheduled" ? "Previous attempt failed" : "✕ Failed"}
                                         </span>
                                       )}
                                   </div>
@@ -900,8 +999,8 @@ return ( <main className="min-h-screen bg-gray-100">
                                         )}
                                       </>
                                     ) : (
-                                      <p className="mt-1 text-[11px] text-red-600">
-                                        ✕ Failed
+                                      <p className={`mt-1 text-[11px] ${schedule.status === "scheduled" ? "text-amber-700" : "text-red-600"}`}>
+                                        {schedule.status === "scheduled" ? "Previous attempt failed" : "✕ Failed"}
                                       </p>
                                     )}
                                   </div>
@@ -959,7 +1058,10 @@ return ( <main className="min-h-screen bg-gray-100">
               )}
             </tbody>
           </table>
-        </div>
+          </div>
+          </>
+        )}
+        </>
       )}
     </div>
   </section>
