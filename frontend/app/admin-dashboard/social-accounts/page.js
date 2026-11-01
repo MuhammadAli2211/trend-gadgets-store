@@ -94,7 +94,12 @@ export default function SocialAccountsPage() {
       }
 
       if (params.get("instagram") === "connected") {
-        setMessage("Instagram account successfully connected!");
+        setMessage("Instagram connected through Facebook. Reels can use available trending music.");
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      if (params.get("instagram") === "not-linked") {
+        setError("Facebook connected, but its Page has no linked Instagram Professional account. Link Instagram to the Facebook Page, then connect Facebook again.");
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
@@ -413,23 +418,21 @@ export default function SocialAccountsPage() {
 
             </div>
 
-            {instagramAccounts.length > 0 ? (
+            {instagramAccounts.length > 0 && instagramAccounts.some((account) => account.tokenType === "facebook_login") ? (
               <span style={styles.connectedBadge}>
                 <span style={styles.greenDot}></span>
-                Connected
+                Connected with Facebook
               </span>
             ) : (
               <button
-                onClick={connectInstagram}
-                disabled={instagramConnecting}
+                onClick={connectFacebook}
+                disabled={connecting}
                 style={{
                   ...styles.instagramConnectButton,
-                  opacity: instagramConnecting ? 0.7 : 1,
+                  opacity: connecting ? 0.7 : 1,
                 }}
               >
-                {instagramConnecting
-                  ? "Connecting..."
-                  : "Connect Instagram"}
+                {connecting ? "Connecting..." : "Connect Instagram with Facebook"}
               </button>
             )}
 
@@ -488,6 +491,12 @@ export default function SocialAccountsPage() {
               <span>○</span>
               No Instagram account connected.
             </div>
+          )}
+
+          {instagramAccounts.some((account) => account.tokenType !== "facebook_login") && (
+            <p style={styles.notConnected}>
+              Reels music ke liye Instagram ko linked Facebook Page se ek baar reconnect karein.
+            </p>
           )}
 
         </div>

@@ -23,6 +23,9 @@ const META_GRAPH_BASE =
 const INSTAGRAM_GRAPH_BASE =
   `https://graph.instagram.com/${META_GRAPH_VERSION}`;
 
+const getInstagramGraphBase = (account) =>
+  account?.tokenType === "facebook_login" ? META_GRAPH_BASE : INSTAGRAM_GRAPH_BASE;
+
 // ======================================================
 // HELPERS
 // ======================================================
@@ -161,11 +164,12 @@ const verifyInstagramAccount =
   async ({
     instagramAccountId,
     accessToken,
+    graphBase = INSTAGRAM_GRAPH_BASE,
   }) => {
     try {
       const response =
         await graphApi.get(
-          `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}`,
+          `${graphBase}/${instagramAccountId}`,
           {
             params: {
               fields:
@@ -553,6 +557,7 @@ const publishInstagramReel =
 
     const accessToken =
       account.accessToken;
+    const graphBase = getInstagramGraphBase(account);
 
     const videoUrl =
       content?.media?.url;
@@ -604,40 +609,75 @@ const publishInstagramReel =
     await verifyInstagramAccount({
       instagramAccountId,
       accessToken,
+      graphBase,
     });
+
+    let audioConfiguration = null;
+    if (account.tokenType === "facebook_login" && account.instagramAudioAccessToken) {
+      try {
+        const audioResponse = await graphApi.get(`${META_GRAPH_BASE}/ig_audio`, {
+          params: {
+            audio_type: "music",
+            access_token: account.instagramAudioAccessToken,
+          },
+        });
+        const track = audioResponse.data?.data?.find((item) => item?.id || item?.audio_id);
+        const audioId = track?.id || track?.audio_id;
+        if (audioId) {
+          audioConfiguration = JSON.stringify({
+            audio_id: String(audioId),
+            audio_volume: 100,
+            video_volume: 20,
+          });
+          console.log("Using authorized trending Instagram music.", { audioId: String(audioId) });
+        } else {
+          console.warn("Instagram returned no authorized trending music; publishing Reel with its existing audio.");
+        }
+      } catch (error) {
+        console.warn("Instagram trending music lookup failed; publishing Reel without catalog music.", error.response?.data || error.message);
+      }
+    }
 
     // ----------------------------------------------
     // CREATE REEL CONTAINER
     // ----------------------------------------------
 
+    const containerParams = {
+      media_type: mediaType,
+      video_url: videoUrl,
+      caption: getInstagramCaption(content),
+      ...(audioConfiguration ? { audio_configuration: audioConfiguration } : {}),
+      access_token: accessToken,
+    };
     let containerResponse;
-
     try {
-      containerResponse =
-        await graphApi.post(
-          `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
-          null,
-          {
-            params: {
-              media_type:
-                mediaType,
-
-              video_url:
-                videoUrl,
-
-              caption:
-                getInstagramCaption(content),
-
-              access_token:
-                accessToken,
-            },
-          }
-        );
-    } catch (error) {
-      throw formatMetaError(
-        error,
-        `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
+      containerResponse = await graphApi.post(
+        `${graphBase}/${instagramAccountId}/media`,
+        null,
+        { params: containerParams }
       );
+    } catch (error) {
+      if (audioConfiguration) {
+        console.warn("Meta rejected the attached music; retrying this Reel without catalog music.", error.response?.data || error.message);
+        delete containerParams.audio_configuration;
+        try {
+          containerResponse = await graphApi.post(
+            `${graphBase}/${instagramAccountId}/media`,
+            null,
+            { params: containerParams }
+          );
+        } catch (retryError) {
+          throw formatMetaError(
+            retryError,
+            `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
+          );
+        }
+      } else {
+        throw formatMetaError(
+          error,
+          `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
+        );
+      }
     }
 
     const creationId =
@@ -670,7 +710,7 @@ const publishInstagramReel =
       try {
         const statusResponse =
           await graphApi.get(
-            `${INSTAGRAM_GRAPH_BASE}/${creationId}`,
+            `${graphBase}/${creationId}`,
             {
               params: {
                 fields:
@@ -752,7 +792,7 @@ const publishInstagramReel =
     try {
       publishResponse =
         await graphApi.post(
-          `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media_publish`,
+          `${graphBase}/${instagramAccountId}/media_publish`,
           null,
           {
             params: {
@@ -794,7 +834,7 @@ const publishInstagramReel =
     try {
       const permalinkResponse =
         await graphApi.get(
-          `${INSTAGRAM_GRAPH_BASE}/${mediaId}`,
+          `${graphBase}/${mediaId}`,
           {
             params: {
               fields:
@@ -846,6 +886,7 @@ const waitForInstagramContainer = async ({
   creationId,
   accessToken,
   mediaLabel,
+  graphBase = INSTAGRAM_GRAPH_BASE,
 }) => {
   let finalStatus = "";
 
@@ -854,7 +895,7 @@ const waitForInstagramContainer = async ({
 
     try {
       const response = await graphApi.get(
-        `${INSTAGRAM_GRAPH_BASE}/${creationId}`,
+        `${graphBase}/${creationId}`,
         {
           params: {
             fields: "id,status_code,status",
@@ -909,14 +950,15 @@ const getInstagramCaption = (content) => {
 const publishInstagramPhoto = async ({ content, account }) => {
   const instagramAccountId = account.instagramAccountId || account.accountId;
   const accessToken = account.accessToken;
+  const graphBase = getInstagramGraphBase(account);
   if (!instagramAccountId || !accessToken || !content?.media?.url) {
     throw new Error("Instagram account, access token, or image is missing.");
   }
-  await verifyInstagramAccount({ instagramAccountId, accessToken });
+  await verifyInstagramAccount({ instagramAccountId, accessToken, graphBase });
   let containerResponse;
   try {
     containerResponse = await graphApi.post(
-      `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media`,
+      `${graphBase}/${instagramAccountId}/media`,
       null,
       { params: { image_url: content.media.url, caption: getInstagramCaption(content), access_token: accessToken } }
     );
@@ -929,6 +971,7 @@ const publishInstagramPhoto = async ({ content, account }) => {
     creationId,
     accessToken,
     mediaLabel: "photo",
+    graphBase,
   });
 
   let publishResponse = null;
@@ -936,7 +979,7 @@ const publishInstagramPhoto = async ({ content, account }) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
     publishResponse = await graphApi.post(
-        `${INSTAGRAM_GRAPH_BASE}/${instagramAccountId}/media_publish`,
+        `${graphBase}/${instagramAccountId}/media_publish`,
         null,
         { params: { creation_id: creationId, access_token: accessToken } }
       );
@@ -957,7 +1000,7 @@ const publishInstagramPhoto = async ({ content, account }) => {
   return {
     success: true,
     postId,
-    publishedUrl: await lookupPublishedUrl(INSTAGRAM_GRAPH_BASE, postId, accessToken),
+    publishedUrl: await lookupPublishedUrl(graphBase, postId, accessToken),
   };
 };
 

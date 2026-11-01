@@ -112,7 +112,7 @@
     try {
       const accounts =
         await SocialAccount.find({})
-          .select("-accessToken")
+          .select("-accessToken -instagramAudioAccessToken")
           .sort({ createdAt: -1 });
 
       return res.json({
@@ -168,6 +168,7 @@
           "pages_read_engagement",
           "pages_manage_metadata",
           "instagram_basic",
+          "instagram_content_publish",
         ].join(",");
 
         const state = issueOAuthState(res, "facebook");
@@ -344,7 +345,7 @@
               {
                 params: {
                   fields:
-                    "id,name,access_token",
+                    "id,name,access_token,instagram_business_account{id,username}",
 
                   access_token:
                     userAccessToken,
@@ -401,6 +402,16 @@
             error.response?.data ||
               error.message
           );
+          try {
+            const fallbackPages = await axios.get(`${GRAPH_BASE}/me/accounts`, {
+              params: { fields: "id,name,access_token", access_token: userAccessToken },
+            });
+            selectedPage = (fallbackPages.data?.data || []).find(
+              (page) => String(page.id) === String(FACEBOOK_PAGE_ID)
+            ) || null;
+          } catch (fallbackError) {
+            console.error("Facebook Page fallback lookup failed:", fallbackError.response?.data || fallbackError.message);
+          }
         }
 
 
@@ -423,7 +434,7 @@
                 {
                   params: {
                     fields:
-                      "id,name,access_token",
+                      "id,name,access_token,instagram_business_account{id,username}",
 
                     access_token:
                       userAccessToken,
@@ -459,6 +470,14 @@
               error.response?.data ||
                 error.message
             );
+            try {
+              const fallbackPage = await axios.get(`${GRAPH_BASE}/${FACEBOOK_PAGE_ID}`, {
+                params: { fields: "id,name,access_token", access_token: userAccessToken },
+              });
+              if (fallbackPage.data?.id) selectedPage = fallbackPage.data;
+            } catch (fallbackError) {
+              console.error("Direct Facebook Page fallback failed:", fallbackError.response?.data || fallbackError.message);
+            }
           }
         }
 
@@ -592,6 +611,40 @@
 
         await facebookAccount.save();
 
+        const linkedInstagram = selectedPage.instagram_business_account;
+        let instagramConnected = false;
+        if (linkedInstagram?.id) {
+          let instagramAccount = await SocialAccount.findOne({
+            platform: "instagram",
+            accountId: String(linkedInstagram.id),
+          });
+          if (!instagramAccount) {
+            instagramAccount = new SocialAccount({
+              platform: "instagram",
+              accountName: linkedInstagram.username || selectedPage.name,
+              accountId: String(linkedInstagram.id),
+            });
+          }
+          instagramAccount.accountName = linkedInstagram.username || selectedPage.name;
+          instagramAccount.accountId = String(linkedInstagram.id);
+          instagramAccount.instagramAccountId = String(linkedInstagram.id);
+          instagramAccount.instagramUsername = linkedInstagram.username || "";
+          instagramAccount.accessToken = selectedPage.access_token;
+          instagramAccount.instagramAudioAccessToken = userAccessToken;
+          instagramAccount.pageId = String(selectedPage.id);
+          instagramAccount.pageName = selectedPage.name;
+          instagramAccount.tokenType = "facebook_login";
+          instagramAccount.status = "connected";
+          await instagramAccount.save();
+          instagramConnected = true;
+          console.log("Linked Instagram account saved through Facebook Login.", {
+            instagramAccountId: String(linkedInstagram.id),
+            hasAudioCatalogToken: true,
+          });
+        } else {
+          console.warn("Facebook Page has no linked Instagram Professional account.");
+        }
+
 
         console.log(
           "Facebook account saved successfully."
@@ -599,7 +652,7 @@
 
 
         return res.redirect(
-          `${FRONTEND_URL}/admin-dashboard/social-accounts?facebook=connected`
+          `${FRONTEND_URL}/admin-dashboard/social-accounts?facebook=connected&instagram=${instagramConnected ? "connected" : "not-linked"}`
         );
 
       } catch (error) {
@@ -1084,6 +1137,7 @@
 
           instagramSocialAccount.tokenType =
             "instagram_business_login";
+          instagramSocialAccount.instagramAudioAccessToken = "";
 
           instagramSocialAccount.status =
             "connected";

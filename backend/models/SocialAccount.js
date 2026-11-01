@@ -26,6 +26,12 @@ const socialAccountSchema = new mongoose.Schema(
       default: "",
     },
 
+    // Facebook User token used only to query Instagram's authorized audio catalog.
+    instagramAudioAccessToken: {
+      type: String,
+      default: "",
+    },
+
     // Facebook Page specific
     pageId: {
       type: String,
