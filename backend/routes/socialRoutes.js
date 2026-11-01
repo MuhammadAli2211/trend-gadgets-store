@@ -21,16 +21,28 @@
   const META_APP_SECRET =
     process.env.META_APP_SECRET;
 
-  const META_REDIRECT_URI =
-    process.env.META_REDIRECT_URI ||
-    "http://localhost:5000/api/social-accounts/facebook/callback";
-
   const META_LOGIN_CONFIG_ID =
     process.env.META_LOGIN_CONFIG_ID;
 
   const FRONTEND_URL =
     process.env.FRONTEND_URL ||
     "http://localhost:3000";
+
+  // In production, send OAuth callbacks through the storefront's same-origin
+  // /api proxy. The state cookie is set when the admin calls /api from this
+  // origin, so returning to the API's separate Vercel host would drop it.
+  const getOAuthRedirectUri = (provider, configuredUri, localUri) => {
+    if (process.env.NODE_ENV === "production") {
+      return `${FRONTEND_URL.replace(/\/+$/, "")}/api/social-accounts/${provider}/callback`;
+    }
+    return configuredUri || localUri;
+  };
+
+  const META_REDIRECT_URI = getOAuthRedirectUri(
+    "facebook",
+    process.env.META_REDIRECT_URI,
+    "http://localhost:5000/api/social-accounts/facebook/callback"
+  );
 
   const FACEBOOK_PAGE_ID =
     process.env.FACEBOOK_PAGE_ID;
@@ -51,9 +63,11 @@
   const INSTAGRAM_APP_SECRET =
     process.env.INSTAGRAM_APP_SECRET;
 
-  const INSTAGRAM_REDIRECT_URI =
-    process.env.INSTAGRAM_REDIRECT_URI ||
-    "http://localhost:5000/api/social-accounts/instagram/callback";
+  const INSTAGRAM_REDIRECT_URI = getOAuthRedirectUri(
+    "instagram",
+    process.env.INSTAGRAM_REDIRECT_URI,
+    "http://localhost:5000/api/social-accounts/instagram/callback"
+  );
 
   const oauthCookieOptions = (path, provider) => {
     const instagramHttpsCallback =
