@@ -1305,12 +1305,6 @@ export default function ContentManagementPage() {
                                   </p>
 
                                   <div className="mt-2 flex flex-wrap gap-1">
-                                    {schedule.generateNewContent && (
-                                      <span className="rounded-full bg-purple-100 px-2 py-1 text-[10px] font-semibold text-purple-700">
-                                        Fresh
-                                      </span>
-                                    )}
-
                                     {schedule.autoDeletePrevious && (
                                       <span className="rounded-full bg-orange-100 px-2 py-1 text-[10px] font-semibold text-orange-700">
                                         Auto Delete

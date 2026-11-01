@@ -20,7 +20,6 @@ export default function AddSchedulePage() {
     repeatEnabled: false,
     repeatEvery: 1,
     repeatUnit: "days",
-    generateNewContent: false,
     autoDeletePrevious: true,
   });
 
@@ -162,8 +161,7 @@ export default function AddSchedulePage() {
 
         repeatUnit: "days",
 
-        generateNewContent:
-          form.generateNewContent,
+        generateNewContent: false,
 
         autoDeletePrevious:
           form.autoDeletePrevious,
@@ -453,32 +451,6 @@ export default function AddSchedulePage() {
                 </p>
               </div>
             )}
-          </div>
-
-          {/* FRESH CONTENT */}
-
-          <div className="mb-4 rounded-xl border p-5">
-            <label className="flex cursor-pointer items-start gap-3">
-              <input
-                type="checkbox"
-                name="generateNewContent"
-                checked={form.generateNewContent}
-                onChange={handleChange}
-                className="mt-1 h-4 w-4"
-              />
-
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
-                  Generate fresh content on persistent servers
-                </p>
-
-                <p className="mt-1 text-xs text-gray-500">
-                  Vercel reuses the selected approved Reel to
-                  avoid a timeout. Create and approve a new Reel
-                  before scheduling if you want different content.
-                </p>
-              </div>
-            </label>
           </div>
 
           {/* DELETE PREVIOUS */}

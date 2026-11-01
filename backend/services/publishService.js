@@ -8,7 +8,7 @@ const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
 
 const {
-  generateFreshReelContent,
+  generateProductImageReelAsset,
 } = require("./reelContentService");
 
 const META_GRAPH_VERSION =
@@ -1547,6 +1547,30 @@ const processSchedule =
         throw new Error("TikTok publishing is not configured. Remove TikTok from this schedule before it runs.");
       }
 
+      const savedProductVideo = product.video?.url
+        ? product.video
+        : product.videos?.find((video) => video?.url);
+      if (savedProductVideo?.url) {
+        // Always prefer the seller's own product video for a Reel, including
+        // schedules created before automatic Reel preparation was added.
+        content.type = "reel";
+        content.media = {
+          url: savedProductVideo.url,
+          publicId: savedProductVideo.publicId || "",
+          resourceType: "video",
+        };
+        content.generatedAutomatically = true;
+        await content.save();
+      } else if (content.type !== "reel" || content.media?.resourceType !== "video") {
+        // Convert older image-post schedules once, then reuse the stored Reel
+        // on every repeat instead of generating duplicate content each week.
+        const generatedMedia = await generateProductImageReelAsset(product);
+        content.type = "reel";
+        content.media = generatedMedia;
+        content.generatedAutomatically = true;
+        await content.save();
+      }
+
       console.log(
         "======================================"
       );
@@ -1589,49 +1613,11 @@ const processSchedule =
       // FRESH CONTENT FOR REPEAT
       // ----------------------------------------------
 
-      const shouldGenerateFreshContent =
-        lockedSchedule.repeatEnabled &&
-        lockedSchedule.generateNewContent &&
-        !lockedSchedule.retryOnlyFailed &&
-        lockedSchedule.runCount > 1;
-
-      if (shouldGenerateFreshContent && process.env.VERCEL) {
-        // FFmpeg reel generation can exceed Vercel's 5-minute function limit.
-        // Reuse the selected approved Reel/video so scheduled publishing can
-        // reach Facebook and Instagram reliably. Generate fresh content from
-        // the product page before scheduling when a different Reel is needed.
-        console.warn(
-          "Skipping inline fresh Reel generation on Vercel; reusing the approved scheduled content."
-        );
-      } else if (shouldGenerateFreshContent) {
-        console.log(
-          "Generating fresh Reel content..."
-        );
-
-        const freshContent =
-          await generateFreshReelContent({
-            productId:
-              product._id,
-
-            platform:
-              content.platform === "all"
-                ? "all"
-                : content.platform,
-
-            createdBy:
-              lockedSchedule.createdBy,
-          });
-
-        content =
-          freshContent;
-
-        lockedSchedule.content =
-          freshContent._id;
-
-        console.log(
-          "Fresh content generated:",
-          freshContent._id.toString()
-        );
+      // Keep one approved Reel per product and reuse it on repeat schedules.
+      // Fresh-per-cycle Reel creation made duplicate content and could time out.
+      if (lockedSchedule.generateNewContent) {
+        lockedSchedule.generateNewContent = false;
+        await lockedSchedule.save();
       }
 
       // ----------------------------------------------
@@ -1724,19 +1710,6 @@ const processSchedule =
 
           // A product's uploaded video is the preferred scheduled media.
           // Use the generated Reel only when the product has no saved video.
-          const productVideoUrl = product.video?.url || product.videos?.[0]?.url || "";
-          const contentToPublish = productVideoUrl && content.type === "reel"
-            ? {
-                ...content.toObject(),
-                type: "reel",
-                media: {
-                  ...(content.media?.toObject?.() || content.media || {}),
-                  url: productVideoUrl,
-                  resourceType: "video",
-                },
-              }
-            : content;
-
           await savePlatformResult({
             platform,
             postId: previousPostDeleted ? "" : previousPostId,
@@ -1753,7 +1726,7 @@ const processSchedule =
           const published =
             await publishToPlatform({
               platform,
-              content: contentToPublish,
+              content,
             });
 
           console.log(
@@ -2239,9 +2212,9 @@ const processDueSchedules =
           .sort({
             scheduledAt: 1,
           })
-          // A video publish can spend up to 90 seconds waiting on Instagram.
-          // Keep a small batch so one serverless invocation can finish safely.
-          .limit(2)
+          // One Reel may need one-time FFmpeg preparation if this is an older
+          // image-only schedule. Keep work serial and within the function cap.
+          .limit(1)
           .select("_id");
 
       if (dueSchedules.length === 0) {

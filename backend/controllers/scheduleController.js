@@ -392,8 +392,7 @@ const createSchedule = async (
 
         repeatUnit: "days",
 
-        generateNewContent:
-          generateNewContent !== false,
+        generateNewContent: false,
 
         autoDeletePrevious:
           autoDeletePrevious !== false,
@@ -490,7 +489,6 @@ const updateSchedule = async (
       scheduledAt,
       repeatEnabled,
       repeatEvery,
-      generateNewContent,
       autoDeletePrevious,
     } = req.body;
 
@@ -624,13 +622,7 @@ const updateSchedule = async (
         value;
     }
 
-    if (
-      typeof generateNewContent ===
-      "boolean"
-    ) {
-      schedule.generateNewContent =
-        generateNewContent;
-    }
+    schedule.generateNewContent = false;
 
     if (
       typeof autoDeletePrevious ===

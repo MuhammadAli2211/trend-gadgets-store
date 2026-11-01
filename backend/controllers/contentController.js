@@ -4,10 +4,7 @@ const mongoose = require("mongoose");
 const Schedule = require("../models/Schedule");
 const cloudinary = require("../config/cloudinary");
 const streamifier = require("streamifier");
-const { createReel } = require("../utils/reelGenerator");
 const { appendProductHashtags, createProductSocialCaption } = require("../utils/socialCaption");
-
-const reelGenerationLocks = new Set();
 
 const uploadToCloudinary = (file) => {
   return new Promise((resolve, reject) => {
@@ -42,25 +39,6 @@ const deleteFromCloudinary = async (publicId, resourceType = "image") => {
       error.response?.body || error.message
     );
   }
-};
-
-const uploadVideoToCloudinary = (filePath) => {
-  return new Promise((resolve, reject) => {
-    cloudinary.uploader.upload(
-      filePath,
-      {
-        folder: "ecommerce-automation/reels",
-        resource_type: "video",
-      },
-      (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      }
-    );
-  });
 };
 
 // GET ALL CONTENT
@@ -545,175 +523,6 @@ const deleteContent = async (req, res) => {
   }
 };
 
-const generateProductReel = async (req, res) => {
-  let reelData = null;
-  let uploadedMedia = null;
-  let contentCreated = false;
-  let generationLockKey = null;
-
-  try {
-    if (!mongoose.isValidObjectId(req.params.productId)) {
-      return res.status(400).json({ success: false, message: "Invalid product ID." });
-    }
-    const product = await Product.findById(
-      req.params.productId
-    );
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found.",
-      });
-    }
-
-    const productVideoUrl = product.video?.url || product.videos?.[0]?.url || "";
-    if ((!product.images || product.images.length === 0) && !productVideoUrl) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "This product needs at least one image or video to generate a Reel.",
-      });
-    }
-
-    const requestedLockKey = `${product._id}:${req.user._id}`;
-    if (reelGenerationLocks.has(requestedLockKey)) {
-      return res.status(409).json({
-        success: false,
-        message: "A Reel for this product is already being generated. Please wait.",
-      });
-    }
-    generationLockKey = requestedLockKey;
-    reelGenerationLocks.add(generationLockKey);
-
-    const reelCaption = createProductSocialCaption(product, process.env.FRONTEND_URL || "");
-    const findExistingReel = () => Content.findOne({
-      product: product._id,
-      type: "reel",
-      status: { $nin: ["rejected"] },
-      archivedAt: null,
-    }).sort({ createdAt: -1 });
-    const existingReel = await findExistingReel();
-    if (existingReel) {
-      const populatedExistingReel = await Content.findById(existingReel._id)
-        .populate("product", "name price category images")
-        .populate("createdBy", "name email");
-      return res.json({
-        success: true,
-        message: "This product already has a Reel. Use that content instead of creating a second one.",
-        content: populatedExistingReel,
-        duplicate: true,
-      });
-    }
-
-    console.log(
-      `Generating reel for: ${product.name}`
-    );
-
-    reelData = await createReel({
-      images: product.images,
-      videoUrl: productVideoUrl,
-      productName: product.name,
-      price: product.price,
-    });
-
-    // Check again after rendering so a near-simultaneous second request can
-    // reuse the first Reel instead of uploading and saving another copy.
-    const existingRenderedReel = await findExistingReel();
-    if (existingRenderedReel) {
-      const populatedExistingReel = await Content.findById(existingRenderedReel._id)
-        .populate("product", "name price category images")
-        .populate("createdBy", "name email");
-      return res.json({
-        success: true,
-        message: "This product already has a Reel. Use that content instead of creating a second one.",
-        content: populatedExistingReel,
-        duplicate: true,
-      });
-    }
-
-    console.log(
-      "Reel generated successfully. Uploading to Cloudinary..."
-    );
-
-    const uploaded = await uploadVideoToCloudinary(
-      reelData.outputPath
-    );
-    uploadedMedia = uploaded;
-
-    const content = await Content.create({
-      product: product._id,
-
-      type: "reel",
-
-      platform: "all",
-
-      caption: reelCaption,
-
-      media: {
-        url: uploaded.secure_url,
-        publicId: uploaded.public_id,
-        resourceType: uploaded.resource_type,
-      },
-
-      status: "draft",
-
-      createdBy: req.user._id,
-    });
-    contentCreated = true;
-
-    const populatedContent =
-      await Content.findById(content._id)
-        .populate(
-          "product",
-          "name price category images"
-        )
-        .populate(
-          "createdBy",
-          "name email"
-        );
-
-    res.status(201).json({
-      success: true,
-      message: "Reel generated successfully.",
-      content: populatedContent,
-    });
-  } catch (error) {
-    if (!contentCreated && uploadedMedia?.public_id) {
-      await deleteFromCloudinary(uploadedMedia.public_id, uploadedMedia.resource_type || "video");
-    }
-    console.error(
-      "Generate product reel error:",
-      error
-    );
-
-    res.status(500).json({
-      success: false,
-      message:
-        error.message ||
-        "Unable to generate reel.",
-    });
-  } finally {
-    if (reelData?.tempDir) {
-      try {
-        const fs = require("fs");
-
-        fs.rmSync(reelData.tempDir, {
-          recursive: true,
-          force: true,
-        });
-      } catch (error) {
-        console.error(
-          "Temporary files cleanup error:",
-          error.message
-        );
-      }
-    }
-    if (generationLockKey) {
-      reelGenerationLocks.delete(generationLockKey);
-    }
-  }
-};
-
 module.exports = {
   getContent,
   getContentById,
@@ -722,5 +531,4 @@ module.exports = {
   updateContentStatus,
   setContentArchived,
   deleteContent,
-    generateProductReel,
 };

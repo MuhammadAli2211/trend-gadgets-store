@@ -117,7 +117,9 @@ export default function AddProductPage() {
           setUploadStatus(`Uploading video ${index + 1}/${videos.length}: ${percent}%`);
         }));
       }
-      setUploadStatus("Saving product details…");
+      setUploadStatus(videos.length
+        ? "Saving product and preparing its Reel from your video…"
+        : "Saving product and creating a music Reel from its photos…");
       const data = new FormData();
       Object.entries(form).forEach(([key, value]) => data.append(key, value));
       preparedImages.forEach((file) => data.append("images", file));
@@ -149,7 +151,8 @@ export default function AddProductPage() {
             <label className="block text-sm font-semibold">Product photos (up to 8)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={handleImages} className="mt-2 block w-full rounded-lg border bg-white px-4 py-3 font-normal" /></label>
             {images.length > 0 && <p className="text-xs text-gray-500">{images.length} photo(s) selected. The first photo appears on the product card.</p>}
             <label className="block text-sm font-semibold">Product videos (up to 2)<input type="file" accept="video/mp4,video/quicktime,video/webm" multiple onChange={handleVideos} className="mt-2 block w-full rounded-lg border bg-white px-4 py-3 font-normal" /></label>
-            {videos.length > 0 && <p className="text-xs text-gray-500">{videos.length} video(s) selected. Videos upload directly to Cloudinary, including large files, then appear on the product details page.</p>}
+            {videos.length > 0 && <p className="text-xs text-gray-500">{videos.length} video(s) selected. Cart2Door will use the uploaded video as the product Reel.</p>}
+            {videos.length === 0 && <p className="text-xs text-gray-500">No product video selected. Cart2Door will automatically create a music Reel from the product photos.</p>}
           </div>
           {uploadStatus && <p role="status" className="text-sm text-gray-600">{uploadStatus}</p>}
           <div className="flex gap-3"><button type="button" onClick={() => router.push("/admin-dashboard/products")} className="rounded-lg border px-5 py-3">Cancel</button><button type="submit" disabled={loading} className="rounded-lg bg-black px-6 py-3 font-semibold text-white disabled:opacity-50">{loading ? uploadStatus || "Creating…" : "Create Product"}</button></div>

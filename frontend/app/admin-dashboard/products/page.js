@@ -11,7 +11,6 @@ export default function ProductsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [generatingReelId, setGeneratingReelId] = useState("");
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -444,47 +443,6 @@ export default function ProductsPage() {
                             >
                               Delete
                             </button>
-                            <button
-  onClick={async () => {
-    const confirmed = window.confirm(
-      "Generate a Reel from this product's images?"
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setGeneratingReelId(product._id);
-      const response = await api.post(
-        `/content/generate-reel/${product._id}`
-      );
-
-      if (response.data.success) {
-        alert(
-          response.data.duplicate
-            ? "Is product ki Reel pehle se bani hui hai. Wohi use karein."
-            : "Reel generated successfully!"
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Generate reel error:",
-        error
-      );
-
-      alert(
-        error.response?.data?.message ||
-          "Reel nahi ban saki. Server ka waqt khatam ho sakta hai; dobara try karein."
-      );
-    } finally {
-      setGeneratingReelId("");
-    }
-  }}
-  disabled={Boolean(generatingReelId)}
-  className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:cursor-wait disabled:opacity-60"
->
-  {generatingReelId === product._id ? "Generating..." : "Generate Reel"}
-</button>
-
                           </div>
 
                         </td>

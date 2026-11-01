@@ -9,7 +9,6 @@ const {
   updateContentStatus,
   setContentArchived,
   deleteContent,
-  generateProductReel,
 } = require("../controllers/contentController");
 
 const {
@@ -21,11 +20,6 @@ const router = express.Router();
 
 router.use(protect);
 router.use(adminOnly);
-
-router.post(
-  "/generate-reel/:productId",
-  generateProductReel
-);
 
 router.get("/", getContent);
 

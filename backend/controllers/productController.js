@@ -3,6 +3,7 @@ const Content = require("../models/Content");
 const Order = require("../models/Order");
 const cloudinary = require("../config/cloudinary");
 const { createProductSocialCaption } = require("../utils/socialCaption");
+const { generateProductImageReelAsset } = require("../services/reelContentService");
 const crypto = require("crypto");
 
 const streamifier = require("streamifier");
@@ -262,17 +263,26 @@ const createProduct = async (req, res) => {
     });
     createdProduct = product;
 
+    const uploadedProductVideo = uploadedVideos[0];
+    const reelMedia = uploadedProductVideo
+      ? { ...uploadedProductVideo, resourceType: "video" }
+      : uploadedSocialMedia?.resourceType === "video"
+        ? uploadedSocialMedia
+        : await generateProductImageReelAsset(product);
+    uploadedSocialMedia = reelMedia;
+
     await Content.create({
       product: product._id,
-      type: uploadedSocialMedia?.resourceType === "video" ? "reel" : "post",
+      type: "reel",
       platform: "all",
       caption: createProductSocialCaption(product, process.env.FRONTEND_URL || ""),
       media: {
-        url: uploadedSocialMedia?.url || "",
-        publicId: uploadedSocialMedia?.publicId || "",
-        resourceType: uploadedSocialMedia?.resourceType || "",
+        url: reelMedia.url,
+        publicId: reelMedia.publicId,
+        resourceType: "video",
       },
-      status: "draft",
+      generatedAutomatically: true,
+      status: "approved",
       createdBy: req.user._id,
     });
 
@@ -287,7 +297,11 @@ const createProduct = async (req, res) => {
     }
     await Promise.all(uploadedImages.map((image) => deleteFromCloudinary(image.publicId)));
     await Promise.all(uploadedVideos.map((video) => deleteFromCloudinary(video.publicId, "video")));
-    if (uploadedSocialMedia?.publicId) {
+    const alreadyCleanedPublicIds = new Set([
+      ...uploadedImages.map((image) => image.publicId),
+      ...uploadedVideos.map((video) => video.publicId),
+    ]);
+    if (uploadedSocialMedia?.publicId && !alreadyCleanedPublicIds.has(uploadedSocialMedia.publicId)) {
       await deleteFromCloudinary(uploadedSocialMedia.publicId, uploadedSocialMedia.resourceType);
     }
     console.error(

@@ -159,9 +159,9 @@ export default function Storefront() {
         <div className="hidden bg-emerald-800 px-3 py-1.5 text-center text-xs font-medium text-white sm:block">Easy ordering · Direct WhatsApp support</div>
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-2 sm:gap-4 sm:px-6 sm:py-3">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2 sm:gap-3">
-            <Image src="/logo.png" alt="Trend Gadgets & Toys" width={56} height={56} sizes="56px" className="h-11 w-11 shrink-0 rounded-full object-cover sm:h-14 sm:w-14" />
+            <Image src="/cart2door-logo.png" alt="Cart2Door" width={56} height={56} sizes="56px" className="h-11 w-11 shrink-0 rounded-full object-cover sm:h-14 sm:w-14" />
             <span>
-              <span className="block truncate text-sm font-bold leading-tight sm:text-lg">Trend Gadgets & Toys</span>
+              <span className="block truncate text-sm font-bold leading-tight sm:text-lg">Cart2Door</span>
               <span className="hidden text-xs text-slate-500 min-[360px]:block">Shop the best toys</span>
             </span>
           </Link>
@@ -260,7 +260,7 @@ export default function Storefront() {
         </section>
       </section>
 
-      <footer className="mt-10 border-t bg-white px-4 py-6 text-center text-sm text-slate-500">Trend Gadgets & Toys · Add products to your cart and send your order through WhatsApp.</footer>
+      <footer className="mt-10 border-t bg-white px-4 py-6 text-center text-sm text-slate-500">Cart2Door · Add products to your cart and send your order through WhatsApp.</footer>
 
       {showCart && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCart(false); }}>

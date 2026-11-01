@@ -1,7 +1,7 @@
 import { getProductImageUrl, getPublicProduct } from "../../../lib/publicProductServer";
 
 const cleanDescription = (value) => {
-  const description = String(value || "Shop this product from Trend Gadgets & Toys. Order directly through WhatsApp.")
+  const description = String(value || "Shop this product from Cart2Door. Order directly through WhatsApp.")
     .replace(/\s+/g, " ")
     .trim();
   return description.length > 155 ? `${description.slice(0, 152).trimEnd()}…` : description;
@@ -19,7 +19,7 @@ export async function generateMetadata({ params }) {
 
   const title = product.name || "Shop product";
   const description = cleanDescription(product.description);
-  const image = getProductImageUrl(product) || "/logo.png";
+  const image = getProductImageUrl(product) || "/cart2door-logo.png";
   const canonical = `/product/${encodeURIComponent(id)}`;
 
   return {

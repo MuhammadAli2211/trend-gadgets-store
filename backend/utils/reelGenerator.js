@@ -64,6 +64,19 @@ const createTextOverlay = async (
     xmlns="http://www.w3.org/2000/svg"
   >
 
+    <text
+      x="360"
+      y="48"
+      text-anchor="middle"
+      font-family="Arial"
+      font-size="24"
+      font-weight="bold"
+      letter-spacing="3"
+      fill="white"
+    >
+      CART2DOOR
+    </text>
+
     <!-- Top Product Box -->
 
     <rect
@@ -287,17 +300,23 @@ const createBackgroundAudio = (
   wav.writeUInt16LE(16, 34);
   wav.write("data", 36);
   wav.writeUInt32LE(dataSize, 40);
+  const chords = [
+    [261.63, 329.63, 392.0],
+    [196.0, 246.94, 392.0],
+    [220.0, 261.63, 329.63],
+    [174.61, 220.0, 261.63],
+  ];
   for (let frame = 0; frame < sampleCount; frame += 1) {
     const time = frame / sampleRate;
     const fadeIn = Math.min(1, time);
     const fadeOut = Math.min(1, Math.max(0, duration - time));
-    const envelope = Math.min(fadeIn, fadeOut, 1) * 0.22;
+    const envelope = Math.min(fadeIn, fadeOut, 1);
+    const chord = chords[Math.floor(time / Math.max(duration / chords.length, 1)) % chords.length];
+    const chordTone = chord.reduce((sum, frequency, index) =>
+      sum + Math.sin(2 * Math.PI * frequency * time + index * 0.12) * (index === 0 ? 0.07 : 0.045), 0);
+    const bassPulse = Math.exp(-((time % 0.75) * 8)) * Math.sin(2 * Math.PI * 65 * time) * 0.09;
     const sample = Math.round(
-      envelope * (
-        Math.sin(2 * Math.PI * 110 * time) * 0.55 +
-        Math.sin(2 * Math.PI * 440 * time) * 0.3 +
-        Math.sin(2 * Math.PI * 660 * time) * 0.15
-      ) * 32767
+      envelope * (chordTone + bassPulse) * 32767
     );
     const offset = 44 + frame * channels * 2;
     wav.writeInt16LE(sample, offset);

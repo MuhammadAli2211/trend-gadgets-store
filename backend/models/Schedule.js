@@ -115,7 +115,7 @@ const scheduleSchema = new mongoose.Schema(
 
     generateNewContent: {
       type: Boolean,
-      default: true,
+      default: false,
     },
 
     autoDeletePrevious: {

@@ -793,12 +793,6 @@ return ( <main className="min-h-screen bg-gray-100">
                             </p>
 
                             <div className="mt-2 flex flex-wrap gap-1.5">
-                              {schedule.generateNewContent && (
-                                <span className="rounded-full bg-purple-100 px-2.5 py-1 text-[11px] font-semibold text-purple-700">
-                                  Fresh content
-                                </span>
-                              )}
-
                               {schedule.autoDeletePrevious && (
                                 <span className="rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-semibold text-orange-700">
                                   Auto-delete
@@ -917,13 +911,6 @@ return ( <main className="min-h-screen bg-gray-100">
                         </span>
 
                         <div className="mt-3 space-y-1">
-                          {schedule.generateNewContent && (
-                            <p className="text-xs text-purple-600">
-                              ✓ Generate fresh
-                              Reel
-                            </p>
-                          )}
-
                           {schedule.autoDeletePrevious ? (
                             <p className="text-xs text-orange-600">
                               ✓ Delete

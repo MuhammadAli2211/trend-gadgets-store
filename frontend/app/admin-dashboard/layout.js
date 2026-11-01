@@ -40,7 +40,7 @@ export default function AdminDashboardLayout({ children }) {
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Link href="/admin-dashboard" className="shrink-0 leading-tight">
             <span className="block text-base font-bold tracking-tight text-gray-950 sm:text-lg">
-              Store Admin
+              Cart2Door Admin
             </span>
             <span className="hidden text-xs text-gray-500 sm:block">Ecommerce automation</span>
           </Link>

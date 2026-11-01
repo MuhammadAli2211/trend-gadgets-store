@@ -100,6 +100,35 @@ const uploadReelToCloudinary = async (filePath) => {
   };
 };
 
+const generateProductImageReelAsset = async (product) => {
+  if (!product) throw new Error("Product is required to generate a Reel.");
+  const images = getProductImages(product).slice(0, 5);
+  if (images.length === 0) throw new Error(`Product "${product.name}" has no images.`);
+
+  let reel = null;
+  try {
+    reel = await createReel({
+      images,
+      productName: product.name,
+      price: product.price,
+    });
+    if (!reel?.outputPath) throw new Error("Reel generator did not return a video.");
+    const uploaded = await uploadReelToCloudinary(reel.outputPath);
+    return {
+      url: uploaded.url,
+      publicId: uploaded.publicId,
+      resourceType: uploaded.resourceType || "video",
+    };
+  } finally {
+    try {
+      if (reel?.tempDir) fs.rmSync(reel.tempDir, { recursive: true, force: true });
+      else if (reel?.outputPath) fs.rmSync(reel.outputPath, { force: true });
+    } catch (cleanupError) {
+      console.error("Temporary product Reel cleanup warning:", cleanupError.message);
+    }
+  }
+};
+
 // =========================
 // CREATE FRESH REEL CONTENT
 // =========================
@@ -112,11 +141,15 @@ const generateFreshReelContent = async ({
   let reel = null;
   let uploaded = null;
   let saved = false;
+  let uploadedGeneratedAsset = false;
   try {
   const product = await getProduct(productId);
 
   const images = getProductImages(product);
-  const videoUrl = product.video?.url || product.videos?.[0]?.url || "";
+  const productVideo = product.video?.url
+    ? product.video
+    : product.videos?.find((video) => video?.url);
+  const videoUrl = productVideo?.url || "";
 
   if (images.length === 0 && !videoUrl) {
     throw new Error(
@@ -150,27 +183,24 @@ const generateFreshReelContent = async ({
   // GENERATE VIDEO
   // =========================
 
-  reel = await createReel({
-    images,
-    videoUrl,
-    productName: product.name,
-    price: product.price,
-  });
+  if (videoUrl) {
+    // Keep the seller's uploaded product video intact for scheduled Reels.
+    uploaded = {
+      url: videoUrl,
+      publicId: productVideo.publicId || "",
+      resourceType: "video",
+    };
+  } else {
+    reel = await createReel({
+      images: images.slice(0, 5),
+      productName: product.name,
+      price: product.price,
+    });
 
-  if (!reel?.outputPath) {
-    throw new Error(
-      "Reel generator did not return a video."
-    );
+    if (!reel?.outputPath) throw new Error("Reel generator did not return a video.");
+    uploaded = await uploadReelToCloudinary(reel.outputPath);
+    uploadedGeneratedAsset = true;
   }
-
-  // =========================
-  // UPLOAD
-  // =========================
-
-  uploaded =
-    await uploadReelToCloudinary(
-      reel.outputPath
-    );
 
   // =========================
   // CREATE CONTENT
@@ -218,7 +248,7 @@ const generateFreshReelContent = async ({
 
   return content;
   } catch (error) {
-    if (!saved && uploaded?.publicId) {
+    if (!saved && uploadedGeneratedAsset && uploaded?.publicId) {
       try {
         await cloudinary.uploader.destroy(uploaded.publicId, {
           resource_type: uploaded.resourceType || "video",
@@ -243,5 +273,6 @@ const generateFreshReelContent = async ({
 
 module.exports = {
   generateFreshReelContent,
+  generateProductImageReelAsset,
   uploadReelToCloudinary,
 };
