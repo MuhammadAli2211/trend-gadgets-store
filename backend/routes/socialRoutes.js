@@ -26,7 +26,9 @@
 
   const FRONTEND_URL =
     process.env.FRONTEND_URL ||
-    "http://localhost:3000";
+    (process.env.NODE_ENV === "production"
+      ? "https://trend-gadgets-storefront.vercel.app"
+      : "http://localhost:3000");
 
   // In production, send OAuth callbacks through the storefront's same-origin
   // /api proxy. The state cookie is set when the admin calls /api from this
