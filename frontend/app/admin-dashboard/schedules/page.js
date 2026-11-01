@@ -578,14 +578,27 @@ return ( <main className="min-h-screen bg-gray-100">
               const platforms = getPlatforms(schedule);
               const publishedPosts = getPublishedPosts(schedule);
               const hasPreviousFailure = publishedPosts.some((post) => !post.success && !post.manualRequired);
+              const productImage = schedule?.content?.product?.images?.[0]?.url || "";
+              const mediaUrl = getMediaUrl(schedule);
               return (
                 <article key={schedule._id} className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h2 className="truncate text-base font-semibold text-gray-900">{getProductName(schedule)}</h2>
-                      {schedule?.content?.product?.price !== undefined && (
-                        <p className="mt-1 text-sm text-gray-500">Rs. {schedule.content.product.price}</p>
-                      )}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                        {productImage ? (
+                          <Image src={productImage} alt={getProductName(schedule)} width={64} height={64} sizes="64px" className="h-full w-full object-cover" />
+                        ) : mediaUrl && isVideo(schedule) ? (
+                          <video src={mediaUrl} className="h-full w-full bg-black object-cover" muted playsInline preload="metadata" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[10px] text-gray-400">No image</div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="line-clamp-2 text-base font-semibold leading-5 text-gray-900">{getProductName(schedule)}</h2>
+                        {schedule?.content?.product?.price !== undefined && (
+                          <p className="mt-1 text-sm text-gray-500">Rs. {schedule.content.product.price}</p>
+                        )}
+                      </div>
                     </div>
                     <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusClass(schedule.status)}`}>
                       {getStatusLabel(schedule.status)}
