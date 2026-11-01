@@ -39,7 +39,17 @@
   // browser cookie crossing between the storefront and API Vercel domains.
   const getOAuthRedirectUri = (provider, configuredUri, localUri) => {
     if (process.env.NODE_ENV === "production") {
-      return `${BACKEND_URL}/api/social-accounts/${provider}/callback`;
+      const apiCallback = `${BACKEND_URL}/api/social-accounts/${provider}/callback`;
+      try {
+        // Preserve a previously configured API callback when it uses the
+        // registered API host; ignore storefront URLs that Meta may reject.
+        if (configuredUri && new URL(configuredUri).host === new URL(BACKEND_URL).host) {
+          return configuredUri;
+        }
+      } catch {
+        // Fall through to the canonical deployed API callback below.
+      }
+      return apiCallback;
     }
     return configuredUri || localUri;
   };
