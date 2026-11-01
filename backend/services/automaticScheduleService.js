@@ -134,7 +134,12 @@ const ensureAutomaticSchedules = async () => {
     const current = plan.reusableSchedule;
     let scheduledAt;
 
-    if (current?.autoManaged && current.status === "scheduled" && isPostingHour(new Date(current.scheduledAt))) {
+    if (
+      current?.autoManaged &&
+      current.status === "scheduled" &&
+      new Date(current.scheduledAt).getTime() > Date.now() &&
+      isPostingHour(new Date(current.scheduledAt))
+    ) {
       scheduledAt = new Date(current.scheduledAt);
       occupiedTimes.push(scheduledAt.getTime());
     } else {
