@@ -252,7 +252,19 @@ const ensureAutomaticSchedules = async () => {
       continue;
     }
 
-    if (nextTime.getTime() !== currentTime) {
+    const policyNeedsUpdate =
+      schedule.repeatEnabled !== true ||
+      Number(schedule.repeatEvery) !== 7 ||
+      schedule.repeatUnit !== "days" ||
+      schedule.generateNewContent !== true ||
+      schedule.autoDeletePrevious !== true ||
+      JSON.stringify([...(schedule.platforms || [])].sort()) !== JSON.stringify(["facebook", "instagram"]) ||
+      schedule.retryOnlyFailed === true ||
+      Number(schedule.retryCount || 0) !== 0 ||
+      Boolean(schedule.retryForScheduledAt) ||
+      Boolean(schedule.errorMessage);
+
+    if (nextTime.getTime() !== currentTime || policyNeedsUpdate) {
       schedule.scheduledAt = nextTime;
       schedule.repeatEnabled = true;
       schedule.repeatEvery = 7;
