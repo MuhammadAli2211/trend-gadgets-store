@@ -2,6 +2,7 @@
   const axios = require("axios");
   const crypto = require("crypto");
   const SocialAccount = require("../models/SocialAccount");
+  const OAuthState = require("../models/OAuthState");
   const { protect, adminOnly } = require("../middleware/authMiddleware");
 
   const router = express.Router();
@@ -30,12 +31,15 @@
       ? "https://trend-gadgets-storefront.vercel.app"
       : "http://localhost:3000");
 
-  // In production, send OAuth callbacks through the storefront's same-origin
-  // /api proxy. The state cookie is set when the admin calls /api from this
-  // origin, so returning to the API's separate Vercel host would drop it.
+  const BACKEND_URL =
+    (process.env.BACKEND_URL || "https://trend-gadgets-api.vercel.app").replace(/\/+$/, "");
+
+  // Keep Meta OAuth callbacks on the API domain registered in the Meta app.
+  // OAuth state is stored server-side so the callback does not depend on a
+  // browser cookie crossing between the storefront and API Vercel domains.
   const getOAuthRedirectUri = (provider, configuredUri, localUri) => {
     if (process.env.NODE_ENV === "production") {
-      return `${FRONTEND_URL.replace(/\/+$/, "")}/api/social-accounts/${provider}/callback`;
+      return `${BACKEND_URL}/api/social-accounts/${provider}/callback`;
     }
     return configuredUri || localUri;
   };
@@ -71,43 +75,27 @@
     "http://localhost:5000/api/social-accounts/instagram/callback"
   );
 
-  const oauthCookieOptions = (path, provider) => {
-    const instagramHttpsCallback =
-      provider === "instagram" &&
-      INSTAGRAM_REDIRECT_URI.startsWith("https://");
-    const secure =
-      process.env.NODE_ENV === "production" || instagramHttpsCallback;
-
-    return {
-      httpOnly: true,
-      secure,
-      sameSite: secure ? "none" : "lax",
-      maxAge: 10 * 60 * 1000,
-      path,
-    };
-  };
-
-  const issueOAuthState = (res, provider) => {
+  const issueOAuthState = async (provider) => {
     const state = crypto.randomBytes(32).toString("hex");
-    const path = `/api/social-accounts/${provider}/callback`;
-    res.cookie(`oauth_${provider}_state`, state, oauthCookieOptions(path, provider));
+    await OAuthState.create({
+      provider,
+      stateHash: crypto.createHash("sha256").update(state).digest("hex"),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    });
     return state;
   };
 
-  const consumeOAuthState = (req, res, provider, receivedState) => {
-    const name = `oauth_${provider}_state`;
-    const entry = (req.headers.cookie || "")
-      .split(";")
-      .map((part) => part.trim())
-      .find((part) => part.startsWith(`${name}=`));
-    const expectedState = entry?.slice(name.length + 1);
-    const clearOptions = oauthCookieOptions(`/api/social-accounts/${provider}/callback`, provider);
-    delete clearOptions.maxAge;
-    res.clearCookie(name, clearOptions);
-    if (!expectedState || typeof receivedState !== "string") return false;
-    const expected = Buffer.from(expectedState);
-    const received = Buffer.from(receivedState);
-    return expected.length === received.length && crypto.timingSafeEqual(expected, received);
+  const consumeOAuthState = async (provider, receivedState) => {
+    if (typeof receivedState !== "string" || !/^[a-f0-9]{64}$/i.test(receivedState)) {
+      return false;
+    }
+    const stateHash = crypto.createHash("sha256").update(receivedState).digest("hex");
+    const consumed = await OAuthState.findOneAndDelete({
+      provider,
+      stateHash,
+      expiresAt: { $gt: new Date() },
+    });
+    return Boolean(consumed);
   };
 
   const escapeHtml = (value) => String(value || "")
@@ -164,7 +152,7 @@
     "/facebook/connect",
     protect,
     adminOnly,
-    (req, res) => {
+    async (req, res) => {
       try {
         if (
           !META_APP_ID ||
@@ -187,7 +175,7 @@
           "instagram_content_publish",
         ].join(",");
 
-        const state = issueOAuthState(res, "facebook");
+        const state = await issueOAuthState("facebook");
         const oauthParams = new URLSearchParams({
           client_id: META_APP_ID,
           redirect_uri: META_REDIRECT_URI,
@@ -251,7 +239,7 @@
           error_description,
         } = req.query;
 
-        if (!consumeOAuthState(req, res, "facebook", state)) {
+        if (!(await consumeOAuthState("facebook", state))) {
           return res.status(400).send("Facebook authorization state is invalid or expired.");
         }
 
@@ -715,7 +703,7 @@
     "/instagram/connect",
     protect,
     adminOnly,
-    (req, res) => {
+    async (req, res) => {
       try {
         if (
           !INSTAGRAM_APP_ID ||
@@ -740,7 +728,7 @@
         ].join(",");
 
 
-        const state = issueOAuthState(res, "instagram");
+        const state = await issueOAuthState("instagram");
         const instagramOAuthUrl =
           `https://www.instagram.com/oauth/authorize` +
           `?client_id=${encodeURIComponent(INSTAGRAM_APP_ID)}` +
@@ -801,7 +789,7 @@
           error_description,
         } = req.query;
 
-        if (!consumeOAuthState(req, res, "instagram", state)) {
+        if (!(await consumeOAuthState("instagram", state))) {
           return res.status(400).send("Instagram authorization state is invalid or expired.");
         }
 
