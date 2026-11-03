@@ -511,6 +511,14 @@ export default function SocialAccountsPage() {
             </div>
           )}
 
+          <p style={styles.redirectHelp}>
+            If Meta shows “Invalid redirect_uri”, add this exact URL under
+            Instagram API → API setup with Instagram login → Business login
+            settings → OAuth Redirect URIs:
+            <br />
+            <code>https://trend-gadgets-api.vercel.app/api/social-accounts/instagram/callback</code>
+          </p>
+
         </div>
 
         {/* TIKTOK */}
@@ -837,6 +845,14 @@ const styles = {
     justifyContent: "flex-end",
     gap: "8px",
     flexWrap: "wrap",
+  },
+
+  redirectHelp: {
+    margin: "14px 0 0",
+    color: "#6b7280",
+    fontSize: "12px",
+    lineHeight: "1.6",
+    overflowWrap: "anywhere",
   },
 
   connectedBadge: {

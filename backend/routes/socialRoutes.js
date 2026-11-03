@@ -80,11 +80,14 @@
   const INSTAGRAM_APP_SECRET =
     process.env.INSTAGRAM_APP_SECRET;
 
-  const INSTAGRAM_REDIRECT_URI = getOAuthRedirectUri(
-    "instagram",
-    process.env.INSTAGRAM_REDIRECT_URI,
-    "http://localhost:5000/api/social-accounts/instagram/callback"
-  );
+  // Instagram Business Login validates this against its own OAuth Redirect
+  // URIs list (separate from Facebook Login's allowlist). Never reuse a
+  // same-host but stale META/Instagram redirect value in production.
+  const INSTAGRAM_REDIRECT_URI =
+    process.env.NODE_ENV === "production"
+      ? `${BACKEND_URL}/api/social-accounts/instagram/callback`
+      : process.env.INSTAGRAM_REDIRECT_URI ||
+        "http://localhost:5000/api/social-accounts/instagram/callback";
 
   const issueOAuthState = async (provider) => {
     const state = crypto.randomBytes(32).toString("hex");
