@@ -63,6 +63,29 @@ const publishedPostSchema = new mongoose.Schema(
   }
 );
 
+const pendingPostDeletionSchema = new mongoose.Schema(
+  {
+    platform: {
+      type: String,
+      enum: ["facebook", "instagram"],
+      required: true,
+    },
+    postId: {
+      type: String,
+      required: true,
+    },
+    lastError: {
+      type: String,
+      default: "",
+    },
+    queuedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 const scheduleSchema = new mongoose.Schema(
   {
     content: {
@@ -167,6 +190,13 @@ const scheduleSchema = new mongoose.Schema(
     // New multi-platform publishing history
     publishedPosts: {
       type: [publishedPostSchema],
+      default: [],
+    },
+
+    // Old posts whose deletion failed must not block the next scheduled post.
+    // Keep their IDs so cleanup can be retried on later worker runs.
+    pendingPostDeletions: {
+      type: [pendingPostDeletionSchema],
       default: [],
     },
 

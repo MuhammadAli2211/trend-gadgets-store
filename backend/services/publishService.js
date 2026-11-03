@@ -7,6 +7,7 @@ const Content = require("../models/Content");
 const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
 const { ensureAutomaticSchedules } = require("./automaticScheduleService");
+const { getProductVideoAsset } = require("../utils/productVideo");
 
 const {
   generateProductImageReelAsset,
@@ -648,6 +649,7 @@ const publishInstagramReel =
       media_type: mediaType,
       video_url: videoUrl,
       caption: getInstagramCaption(content),
+      share_to_feed: true,
       ...(audioConfiguration ? { audio_configuration: audioConfiguration } : {}),
       access_token: accessToken,
     };
@@ -701,6 +703,7 @@ const publishInstagramReel =
     // ----------------------------------------------
 
     let finalStatus = "";
+    let lastStatusCheckError = "";
 
     for (
       let attempt = 1;
@@ -732,6 +735,7 @@ const publishInstagramReel =
           statusResponse?.data
             ?.status ||
           "";
+        lastStatusCheckError = "";
 
         console.log(
           `Instagram processing attempt ${attempt}:`,
@@ -747,8 +751,9 @@ const publishInstagramReel =
             "ERROR"
           )
         ) {
+          const providerMessage = statusResponse?.data?.error_message || statusResponse?.data?.status || "";
           throw new Error(
-            `Instagram Reel processing failed: ${finalStatus}`
+            `Instagram Reel processing failed: ${finalStatus}${providerMessage && providerMessage !== finalStatus ? ` — ${providerMessage}` : ""}`
           );
         }
 
@@ -772,6 +777,7 @@ const publishInstagramReel =
           "Instagram status check warning:",
           error.message
         );
+        lastStatusCheckError = error.message;
       }
     }
 
@@ -781,7 +787,7 @@ const publishInstagramReel =
         .includes("FINISHED")
     ) {
       throw new Error(
-        "Instagram Reel video processing did not finish in the expected time."
+        `Instagram Reel processing did not finish in time. Last status: ${finalStatus || "unknown"}.${lastStatusCheckError ? ` Last check error: ${lastStatusCheckError}` : ""}`
       );
     }
 
@@ -1592,12 +1598,14 @@ const processSchedule =
         throw new Error("TikTok publishing is not configured. Remove TikTok from this schedule before it runs.");
       }
 
-      const savedProductVideo = product.video?.url
-        ? product.video
-        : product.videos?.find((video) => video?.url);
+      const savedProductVideo = getProductVideoAsset(product);
       if (savedProductVideo?.url) {
         // Always prefer the seller's own product video for a Reel, including
         // schedules created before automatic Reel preparation was added.
+        console.log("Using the seller-uploaded product video for this Reel.", {
+          productId: String(product._id),
+          publicId: savedProductVideo.publicId || "",
+        });
         content.type = "reel";
         content.media = {
           url: savedProductVideo.url,
@@ -1704,6 +1712,16 @@ const processSchedule =
         await lockedSchedule.save();
       };
 
+      const queuePendingPostDeletion = async (platform, postId, lastError) => {
+        if (!postId) return;
+        const pending = (lockedSchedule.pendingPostDeletions || []).map((item) => item.toObject?.() || item);
+        const existingIndex = pending.findIndex((item) => item.platform === platform && item.postId === postId);
+        if (existingIndex >= 0) pending[existingIndex] = { ...pending[existingIndex], lastError };
+        else pending.push({ platform, postId, lastError, queuedAt: new Date() });
+        lockedSchedule.pendingPostDeletions = pending;
+        await lockedSchedule.save();
+      };
+
       for (
         const platform of platforms
       ) {
@@ -1720,6 +1738,29 @@ const processSchedule =
             ? lockedSchedule.previousPublishedPostId
             : "");
         let previousPostDeleted = false;
+        let previousPostDeleteWarning = "";
+
+        const pending = (lockedSchedule.pendingPostDeletions || []).map((item) => item.toObject?.() || item);
+        const pendingForPlatform = pending.filter((item) => item.platform === platform);
+        const retainedPending = pending.filter((item) => item.platform !== platform);
+        const deletedPendingIds = new Set();
+        for (const item of pendingForPlatform) {
+          try {
+            const cleanup = await deletePreviousPublishedPost({ platform, postId: item.postId });
+            if (cleanup.success) {
+              deletedPendingIds.add(item.postId);
+              console.log(`Cleaned up previous ${platform} post ${item.postId}:`, cleanup.message);
+            } else {
+              retainedPending.push({ ...item, lastError: cleanup.message });
+            }
+          } catch (cleanupError) {
+            retainedPending.push({ ...item, lastError: cleanupError.message });
+          }
+        }
+        if (pendingForPlatform.length) {
+          lockedSchedule.pendingPostDeletions = retainedPending;
+          await lockedSchedule.save();
+        }
 
         if (lockedSchedule.retryOnlyFailed && currentResult?.success) {
           console.log(`${platform} already succeeded in this run; skipping duplicate publish during retry.`);
@@ -1727,33 +1768,30 @@ const processSchedule =
         }
 
         try {
-          // Delete first so a permission/token failure cannot create a duplicate.
+          // Try to delete the previous post first. If Meta refuses deletion,
+          // retain its ID for later cleanup but do not let cleanup block new reach.
           if (
             lockedSchedule.autoDeletePrevious &&
             previousPostId
           ) {
-            console.log(
-              `Deleting previous ${platform} post before publishing:`,
-              previousPostId
-            );
-
-            const deleteResult =
-              await deletePreviousPublishedPost({
-                platform,
-                postId: previousPostId,
-              });
-
-            console.log(
-              `${platform} delete result:`,
-              deleteResult.message
-            );
-
-            if (!deleteResult.success) {
-              throw new Error(
-                `Previous ${platform} post could not be deleted. New post was not published. ${deleteResult.message}`
+            if (deletedPendingIds.has(previousPostId)) {
+              previousPostDeleted = true;
+            } else {
+              const alreadyQueued = retainedPending.find(
+                (item) => item.platform === platform && item.postId === previousPostId
               );
+              const deleteResult = alreadyQueued
+                ? { success: false, message: alreadyQueued.lastError || "Previous post deletion is queued for retry." }
+                : await deletePreviousPublishedPost({ platform, postId: previousPostId });
+
+              console.log(`${platform} delete result:`, deleteResult.message);
+              if (!deleteResult.success) {
+                previousPostDeleteWarning = deleteResult.message;
+                await queuePendingPostDeletion(platform, previousPostId, deleteResult.message);
+              } else {
+                previousPostDeleted = !deleteResult.skipped;
+              }
             }
-            previousPostDeleted = !deleteResult.skipped;
           }
 
           // ----------------------------------------
@@ -1814,9 +1852,11 @@ const processSchedule =
               previousPostDeleted,
 
             deleteMessage:
-              lockedSchedule.autoDeletePrevious && previousPostId
+              previousPostDeleted
                 ? "Previous post deleted before publishing."
-                : "",
+                : previousPostDeleteWarning
+                  ? `New post published; previous post deletion is queued for retry: ${previousPostDeleteWarning}`
+                  : "",
 
             success: true,
 

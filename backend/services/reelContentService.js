@@ -7,6 +7,7 @@ const cloudinary = require("cloudinary").v2;
 const Product = require("../models/Product");
 const Content = require("../models/Content");
 const { createReel } = require("../utils/reelGenerator");
+const { getProductVideoAsset } = require("../utils/productVideo");
 
 // =========================
 // CLOUDINARY CONFIG
@@ -157,9 +158,7 @@ const generateFreshReelContent = async ({
   const product = await getProduct(productId);
 
   const images = getProductImages(product);
-  const productVideo = product.video?.url
-    ? product.video
-    : product.videos?.find((video) => video?.url);
+  const productVideo = getProductVideoAsset(product);
   const videoUrl = productVideo?.url || "";
 
   if (images.length === 0 && !videoUrl) {

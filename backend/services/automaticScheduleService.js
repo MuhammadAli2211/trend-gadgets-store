@@ -119,6 +119,7 @@ const ensureAutomaticSchedules = async () => {
     const content = eligibleContents.find((item) => String(item._id) === scheduledContentId) || eligibleContents[0];
     if (!content) return null;
 
+    const pendingPlatformRetry = Boolean(reusableSchedule?.retryOnlyFailed);
     const lastProductPostAt = productSchedules.reduce((latest, schedule) => {
       const timestamps = [
         schedule.publishedAt,
@@ -131,7 +132,9 @@ const ensureAutomaticSchedules = async () => {
     }, 0);
     const repeatStart = lastProductPostAt ? lastProductPostAt + repeatEveryDays * DAY_MS : Date.now();
     const oldTime = reusableSchedule?.scheduledAt ? new Date(reusableSchedule.scheduledAt).getTime() : 0;
-    const notBefore = Math.max(Date.now(), repeatStart, scheduled && oldTime > Date.now() ? oldTime : 0);
+    const notBefore = pendingPlatformRetry
+      ? Math.max(Date.now(), oldTime)
+      : Math.max(Date.now(), repeatStart, scheduled && oldTime > Date.now() ? oldTime : 0);
     return { productId, content, schedules: productSchedules, reusableSchedule, notBefore };
   }).filter(Boolean);
 
@@ -145,6 +148,15 @@ const ensureAutomaticSchedules = async () => {
     const currentSlotIsDue = currentScheduledAtMs <= Date.now() && plan.notBefore <= Date.now();
 
     if (
+      current?.autoManaged &&
+      current.status === "scheduled" &&
+      current.retryOnlyFailed
+    ) {
+      // Retries are short-lived (about a minute); preserve their exact time
+      // and platform selection instead of moving them into the next daily slot.
+      scheduledAt = currentScheduledAt;
+      occupiedTimes.push(scheduledAt.getTime());
+    } else if (
       current?.autoManaged &&
       current.status === "scheduled" &&
       isPostingHour(currentScheduledAt) &&
@@ -185,10 +197,13 @@ const ensureAutomaticSchedules = async () => {
     target.autoDeletePrevious = true;
     target.autoManaged = true;
     target.status = "scheduled";
-    target.errorMessage = "";
-    target.retryOnlyFailed = false;
-    target.retryCount = 0;
-    target.retryForScheduledAt = null;
+    const preservePlatformRetry = Boolean(current?.retryOnlyFailed && current.status === "scheduled");
+    if (!preservePlatformRetry) {
+      target.retryOnlyFailed = false;
+      target.retryCount = 0;
+      target.retryForScheduledAt = null;
+      target.errorMessage = "";
+    }
     const mergedPublishedPosts = (target.publishedPosts || []).map((post) => post.toObject?.() || post);
     for (const duplicate of plan.schedules) {
       if (String(duplicate._id) === String(target._id)) continue;
@@ -249,6 +264,12 @@ const ensureAutomaticSchedules = async () => {
   const normalizedTimes = [];
   for (const plan of normalizationPlans) {
     const { schedule, notBefore } = plan;
+    if (schedule.retryOnlyFailed) {
+      // A failed-platform retry may intentionally be scheduled between the
+      // normal top-of-hour slots. Leave it alone so the retry can run.
+      normalizedTimes.push(new Date(schedule.scheduledAt).getTime());
+      continue;
+    }
     const currentTime = new Date(schedule.scheduledAt).getTime();
     const currentSlotIsDue =
       currentTime <= Date.now() &&

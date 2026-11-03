@@ -164,10 +164,22 @@ app.get("/api/cron/process-schedules", async (req, res) => {
 
   try {
     const result = await processDueSchedules();
-    return res.json({
-      success: true,
-      message: "Due schedules checked.",
+    const platformFailures = (result.schedules || []).flatMap((schedule) =>
+      (schedule.results || [])
+        .filter((platformResult) => !platformResult.success)
+        .map((platformResult) => ({
+          scheduleId: schedule.id,
+          platform: platformResult.platform,
+          error: platformResult.error,
+        }))
+    );
+    return res.status(platformFailures.length ? 502 : 200).json({
+      success: platformFailures.length === 0,
+      message: platformFailures.length
+        ? "One or more social platforms failed. Failed platform details are included."
+        : "Due schedules checked.",
       ...result,
+      platformFailures,
     });
   } catch (error) {
     console.error("Vercel schedule cron error:", error);
