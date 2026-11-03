@@ -2209,13 +2209,14 @@ const processDueSchedules =
         );
       }
 
-      const recoveryCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const recoverableSchedules = await Schedule.find({
         status: "scheduled",
         repeatEnabled: true,
         retryOnlyFailed: { $ne: true },
-        retryRecoveryApplied: { $ne: true },
-        lastRunAt: { $gte: recoveryCutoff },
+        // A platform outage can leave a partial publish waiting beyond a day.
+        // Recover persisted failures regardless of age; otherwise a schedule
+        // that missed its short recovery window remains stuck forever.
+        lastRunAt: { $ne: null },
         scheduledAt: { $gt: new Date() },
         errorMessage: { $ne: "" },
       });
@@ -2228,10 +2229,12 @@ const processDueSchedules =
           const attemptedAt = post.attemptedAt || post.publishedAt;
           return attemptedAt && new Date(attemptedAt) >= runStartedAt;
         });
-        const hasSuccess = results.some((item) => item.success);
         const successfulPlatforms = new Set(results.filter((item) => item.success).map((item) => item.platform));
         const hasUnconfirmedPlatform = getSchedulePlatforms(schedule).some((platform) => !successfulPlatforms.has(platform));
-        if (!hasSuccess || !hasUnconfirmedPlatform) continue;
+        const hasConfirmedFailure = results.some((item) =>
+          !item.success && !item.manualRequired && !item.attempting && Boolean(item.error)
+        );
+        if (!hasConfirmedFailure || !hasUnconfirmedPlatform) continue;
 
         const repeatDays = Math.max(1, Number(schedule.repeatEvery || 1));
         schedule.retryForScheduledAt = new Date(
