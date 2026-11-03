@@ -6,7 +6,7 @@ on:
   # GitHub schedule times are UTC; Pakistan is UTC+5.
   schedule:
     # Minute offset change also reactivates a schedule that GitHub has stopped.
-    - cron: "5,20,35,50 3-14 * * *"
+    - cron: "7,22,37,52 3-14 * * *"
   # Kick the worker when posting code or schedule policy changes are deployed.
   push:
     branches:
