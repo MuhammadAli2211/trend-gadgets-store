@@ -2310,6 +2310,10 @@ const processDueSchedules =
           },
         })
           .sort({
+            // Recover a partially published schedule before consuming the
+            // regular due-post queue. Successful platforms are skipped below,
+            // so prioritizing retries cannot duplicate their confirmed posts.
+            retryOnlyFailed: -1,
             scheduledAt: 1,
           })
           // One Reel may need one-time FFmpeg preparation if this is an older
