@@ -1,5 +1,6 @@
   const express = require("express");
   const axios = require("axios");
+  const metaHttp = axios.create({ proxy: false, timeout: 30_000 });
   const crypto = require("crypto");
   const SocialAccount = require("../models/SocialAccount");
   const OAuthState = require("../models/OAuthState");
@@ -300,7 +301,7 @@
         );
 
         const tokenResponse =
-          await axios.get(
+          await metaHttp.get(
             `${GRAPH_BASE}/oauth/access_token`,
             {
               params: {
@@ -354,7 +355,7 @@
           );
 
           const pagesResponse =
-            await axios.get(
+            await metaHttp.get(
               `${GRAPH_BASE}/me/accounts`,
               {
                 params: {
@@ -417,7 +418,7 @@
               error.message
           );
           try {
-            const fallbackPages = await axios.get(`${GRAPH_BASE}/me/accounts`, {
+            const fallbackPages = await metaHttp.get(`${GRAPH_BASE}/me/accounts`, {
               params: { fields: "id,name,access_token", access_token: userAccessToken },
             });
             selectedPage = (fallbackPages.data?.data || []).find(
@@ -443,7 +444,7 @@
             );
 
             const pageResponse =
-              await axios.get(
+              await metaHttp.get(
                 `${GRAPH_BASE}/${FACEBOOK_PAGE_ID}`,
                 {
                   params: {
@@ -485,7 +486,7 @@
                 error.message
             );
             try {
-              const fallbackPage = await axios.get(`${GRAPH_BASE}/${FACEBOOK_PAGE_ID}`, {
+              const fallbackPage = await metaHttp.get(`${GRAPH_BASE}/${FACEBOOK_PAGE_ID}`, {
                 params: { fields: "id,name,access_token", access_token: userAccessToken },
               });
               if (fallbackPage.data?.id) selectedPage = fallbackPage.data;
@@ -644,7 +645,6 @@
           instagramAccount.instagramAccountId = String(linkedInstagram.id);
           instagramAccount.instagramUsername = linkedInstagram.username || "";
           instagramAccount.accessToken = selectedPage.access_token;
-          instagramAccount.instagramAudioAccessToken = userAccessToken;
           instagramAccount.pageId = String(selectedPage.id);
           instagramAccount.pageName = selectedPage.name;
           instagramAccount.tokenType = "facebook_login";
@@ -653,7 +653,6 @@
           instagramConnected = true;
           console.log("Linked Instagram account saved through Facebook Login.", {
             instagramAccountId: String(linkedInstagram.id),
-            hasAudioCatalogToken: true,
           });
         } else {
           console.warn("Facebook Page has no linked Instagram Professional account.");
@@ -859,7 +858,7 @@
 
 
         const tokenResponse =
-          await axios.post(
+          await metaHttp.post(
             "https://api.instagram.com/oauth/access_token",
 
             new URLSearchParams({
@@ -934,7 +933,7 @@
 
 
           const longLivedResponse =
-            await axios.get(
+            await metaHttp.get(
               "https://graph.instagram.com/access_token",
               {
                 params: {
@@ -992,7 +991,7 @@
 
 
           const profileResponse =
-    await axios.get(
+    await metaHttp.get(
       "https://graph.instagram.com/me",
       {
         params: {
@@ -1151,7 +1150,6 @@
 
           instagramSocialAccount.tokenType =
             "instagram_business_login";
-          instagramSocialAccount.instagramAudioAccessToken = "";
 
           instagramSocialAccount.status =
             "connected";

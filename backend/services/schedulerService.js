@@ -1,5 +1,6 @@
 
 const axios = require("axios");
+const graphApi = axios.create({ proxy: false, timeout: 30_000 });
 const fs = require("fs");
 const path = require("path");
 
@@ -95,7 +96,7 @@ const publishFacebookReel = async ({
   -----------------------------------------------
   */
 
-  const startResponse = await axios.post(
+  const startResponse = await graphApi.post(
     `${GRAPH_BASE}/${pageId}/video_reels`,
     null,
     {
@@ -157,7 +158,7 @@ const publishFacebookReel = async ({
     `facebook-reel-${videoId}.mp4`
   );
 
-  const videoResponse = await axios.get(
+  const videoResponse = await graphApi.get(
     videoUrl,
     {
       responseType: "arraybuffer",
@@ -199,7 +200,7 @@ const publishFacebookReel = async ({
     fs.readFileSync(tempFile);
 
   const uploadResponse =
-    await axios.post(
+    await graphApi.post(
       uploadUrl,
       videoBuffer,
       {
@@ -243,7 +244,7 @@ const publishFacebookReel = async ({
   );
 
   const finishResponse =
-    await axios.post(
+    await graphApi.post(
       `${GRAPH_BASE}/${pageId}/video_reels`,
       null,
       {
@@ -285,7 +286,7 @@ const publishFacebookReel = async ({
     await sleep(3000);
 
     const detailsResponse =
-      await axios.get(
+      await graphApi.get(
         `${GRAPH_BASE}/${videoId}`,
         {
           params: {
@@ -346,7 +347,7 @@ const publishFacebookPost = async ({
   isReel = true,
 }) => {
   if (isReel) return publishFacebookReel({ pageId, accessToken, videoUrl, caption });
-  const response = await axios.post(
+  const response = await graphApi.post(
     `${GRAPH_BASE}/${pageId}/videos`,
     null,
     { params: { file_url: videoUrl, description: caption || "", access_token: accessToken } }
@@ -387,7 +388,7 @@ const deletePreviousFacebookPost = async ({
     );
 
     const response =
-      await axios.delete(
+      await graphApi.delete(
         `${GRAPH_BASE}/${postId}`,
         {
           params: {

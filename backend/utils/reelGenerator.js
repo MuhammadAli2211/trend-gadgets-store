@@ -2,6 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const axios = require("axios");
+const directHttp = axios.create({
+  proxy: false,
+  timeout: 120_000,
+  maxContentLength: 100 * 1024 * 1024,
+});
 const sharp = require("sharp");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
@@ -32,7 +37,7 @@ const VIDEO_ENCODING_OPTIONS = [
 */
 
 const downloadImage = async (url, outputPath) => {
-  const response = await axios.get(url, {
+  const response = await directHttp.get(url, {
     responseType: "arraybuffer",
   });
 
@@ -260,74 +265,6 @@ const createVideoClip = (videoPath, overlayPath, outputPath) => new Promise((res
 
 /*
 |--------------------------------------------------------------------------
-| Create Automatic Background Music
-|--------------------------------------------------------------------------
-|
-| FREE LOCAL MUSIC
-|
-| No GPU
-| No API
-| No paid service
-| No copyrighted music file
-|
-| Creates a simple multi-layer promotional beat:
-|
-| Bass + Melody + High Tone
-|
-|--------------------------------------------------------------------------
-*/
-
-const createBackgroundAudio = (
-  outputPath,
-  duration
-) => {
-  // Build a small PCM WAV locally so this works with ffmpeg-static builds
-  // that do not include the optional lavfi input device.
-  const sampleRate = 44100;
-  const channels = 2;
-  const sampleCount = Math.ceil(sampleRate * duration);
-  const dataSize = sampleCount * channels * 2;
-  const wav = Buffer.alloc(44 + dataSize);
-  wav.write("RIFF", 0);
-  wav.writeUInt32LE(36 + dataSize, 4);
-  wav.write("WAVEfmt ", 8);
-  wav.writeUInt32LE(16, 16);
-  wav.writeUInt16LE(1, 20);
-  wav.writeUInt16LE(channels, 22);
-  wav.writeUInt32LE(sampleRate, 24);
-  wav.writeUInt32LE(sampleRate * channels * 2, 28);
-  wav.writeUInt16LE(channels * 2, 32);
-  wav.writeUInt16LE(16, 34);
-  wav.write("data", 36);
-  wav.writeUInt32LE(dataSize, 40);
-  const chords = [
-    [261.63, 329.63, 392.0],
-    [196.0, 246.94, 392.0],
-    [220.0, 261.63, 329.63],
-    [174.61, 220.0, 261.63],
-  ];
-  for (let frame = 0; frame < sampleCount; frame += 1) {
-    const time = frame / sampleRate;
-    const fadeIn = Math.min(1, time);
-    const fadeOut = Math.min(1, Math.max(0, duration - time));
-    const envelope = Math.min(fadeIn, fadeOut, 1);
-    const chord = chords[Math.floor(time / Math.max(duration / chords.length, 1)) % chords.length];
-    const chordTone = chord.reduce((sum, frequency, index) =>
-      sum + Math.sin(2 * Math.PI * frequency * time + index * 0.12) * (index === 0 ? 0.07 : 0.045), 0);
-    const bassPulse = Math.exp(-((time % 0.75) * 8)) * Math.sin(2 * Math.PI * 65 * time) * 0.09;
-    const sample = Math.round(
-      envelope * (chordTone + bassPulse) * 32767
-    );
-    const offset = 44 + frame * channels * 2;
-    wav.writeInt16LE(sample, offset);
-    wav.writeInt16LE(sample, offset + 2);
-  }
-  fs.writeFileSync(outputPath, wav);
-  return Promise.resolve();
-};
-
-/*
-|--------------------------------------------------------------------------
 | Combine Video Clips
 |--------------------------------------------------------------------------
 */
@@ -374,63 +311,6 @@ const combineClips = (
 
 /*
 |--------------------------------------------------------------------------
-| Add Background Music To Video
-|--------------------------------------------------------------------------
-*/
-
-const addAudioToVideo = (
-  videoPath,
-  audioPath,
-  outputPath
-) => {
-  return new Promise((resolve, reject) => {
-    console.log(
-      "Adding music to final Reel..."
-    );
-
-    ffmpeg()
-      .input(videoPath)
-      .input(audioPath)
-      .outputOptions([
-        "-map 0:v:0",
-        "-map 1:a:0",
-
-        // Keep video quality
-        "-c:v copy",
-
-        // Encode audio
-        "-c:a aac",
-        "-b:a 128k",
-        "-ar 44100",
-        "-ac 2",
-
-        // End when video ends
-        "-shortest",
-
-        "-movflags +faststart",
-      ])
-      .output(outputPath)
-      .on("end", () => {
-        console.log(
-          "Music successfully added to Reel."
-        );
-
-        resolve();
-      })
-      .on("error", (error) => {
-        console.error(
-          "Add music error:",
-          error
-        );
-
-        reject(error);
-      })
-      .run();
-  });
-};
-
-/*
-|--------------------------------------------------------------------------
 | MAIN REEL GENERATOR
 |--------------------------------------------------------------------------
 */
@@ -454,7 +334,6 @@ const createReel = async ({
     )
   );
 
-  const imageFiles = [];
   const clipFiles = [];
 
   try {
@@ -478,7 +357,7 @@ const createReel = async ({
     if (videoUrl) {
       const sourceVideoPath = path.join(tempDir, "product-video.mp4");
       const videoClipPath = path.join(tempDir, "product-video-clip.mp4");
-      const response = await axios.get(videoUrl, { responseType: "arraybuffer" });
+      const response = await directHttp.get(videoUrl, { responseType: "arraybuffer" });
       fs.writeFileSync(sourceVideoPath, response.data);
       await createVideoClip(sourceVideoPath, overlayPath, videoClipPath);
       clipFiles.push(videoClipPath);
@@ -532,7 +411,6 @@ const createReel = async ({
         animation
       );
 
-      imageFiles.push(imagePath);
       clipFiles.push(clipPath);
     }
 
@@ -548,15 +426,11 @@ const createReel = async ({
     |--------------------------------------------------------------------------
     */
 
-    const silentVideoPath =
-      path.join(
-        tempDir,
-        "silent-video.mp4"
-      );
+    const finalReelPath = path.join(tempDir, "final-reel.mp4");
 
     await combineClips(
       clipFiles,
-      silentVideoPath
+      finalReelPath
     );
 
     /*
@@ -566,40 +440,6 @@ const createReel = async ({
     */
 
     const duration = clipFiles.length * CLIP_SECONDS;
-
-    /*
-    |--------------------------------------------------------------------------
-    | Generate Automatic Music
-    |--------------------------------------------------------------------------
-    */
-
-    const audioPath = path.join(
-      tempDir,
-      "background-music.wav"
-    );
-
-    await createBackgroundAudio(
-      audioPath,
-      duration
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Final Reel
-    |--------------------------------------------------------------------------
-    */
-
-    const finalReelPath =
-      path.join(
-        tempDir,
-        "final-reel.mp4"
-      );
-
-    await addAudioToVideo(
-      silentVideoPath,
-      audioPath,
-      finalReelPath
-    );
 
     console.log(
       "===================================="
@@ -620,9 +460,7 @@ const createReel = async ({
       "seconds"
     );
 
-    console.log(
-      "Music: Automatic"
-    );
+    console.log("Audio: none; add licensed music in the social app if desired.");
 
     console.log(
       "===================================="

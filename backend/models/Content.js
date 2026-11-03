@@ -57,6 +57,14 @@ const contentSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Legacy generated photo Reels may contain the old synthetic track.
+    // New photo Reels are silent; uploaded product videos retain source audio.
+    audioMode: {
+      type: String,
+      enum: ["legacy", "none", "original"],
+      default: "legacy",
+    },
+
     publishedPostId: {
       type: String,
       default: "",

@@ -265,9 +265,10 @@ const createProduct = async (req, res) => {
     createdProduct = product;
 
     const uploadedProductVideo = uploadedVideos[0];
+    const uploadedSocialVideo = !uploadedProductVideo && uploadedSocialMedia?.resourceType === "video";
     const reelMedia = uploadedProductVideo
       ? { ...uploadedProductVideo, resourceType: "video" }
-      : uploadedSocialMedia?.resourceType === "video"
+      : uploadedSocialVideo
         ? uploadedSocialMedia
         : await generateProductImageReelAsset(product);
     uploadedSocialMedia = reelMedia;
@@ -283,6 +284,7 @@ const createProduct = async (req, res) => {
         resourceType: "video",
       },
       generatedAutomatically: true,
+      audioMode: uploadedProductVideo || uploadedSocialVideo ? "original" : "none",
       status: "approved",
       createdBy: req.user._id,
     });

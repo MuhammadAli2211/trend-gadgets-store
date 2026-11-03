@@ -618,32 +618,6 @@ const publishInstagramReel =
       graphBase,
     });
 
-    let audioConfiguration = null;
-    if (account.tokenType === "facebook_login" && account.instagramAudioAccessToken) {
-      try {
-        const audioResponse = await graphApi.get(`${META_GRAPH_BASE}/ig_audio`, {
-          params: {
-            audio_type: "music",
-            access_token: account.instagramAudioAccessToken,
-          },
-        });
-        const track = audioResponse.data?.data?.find((item) => item?.id || item?.audio_id);
-        const audioId = track?.id || track?.audio_id;
-        if (audioId) {
-          audioConfiguration = JSON.stringify({
-            audio_id: String(audioId),
-            audio_volume: 100,
-            video_volume: 20,
-          });
-          console.log("Using authorized trending Instagram music.", { audioId: String(audioId) });
-        } else {
-          console.warn("Instagram returned no authorized trending music; publishing Reel with its existing audio.");
-        }
-      } catch (error) {
-        console.warn("Instagram trending music lookup failed; publishing Reel without catalog music.", error.response?.data || error.message);
-      }
-    }
-
     // ----------------------------------------------
     // CREATE REEL CONTAINER
     // ----------------------------------------------
@@ -653,7 +627,6 @@ const publishInstagramReel =
       video_url: videoUrl,
       caption: getInstagramCaption(content),
       share_to_feed: true,
-      ...(audioConfiguration ? { audio_configuration: audioConfiguration } : {}),
       access_token: accessToken,
     };
     let containerResponse;
@@ -664,27 +637,10 @@ const publishInstagramReel =
         { params: containerParams }
       );
     } catch (error) {
-      if (audioConfiguration) {
-        console.warn("Meta rejected the attached music; retrying this Reel without catalog music.", error.response?.data || error.message);
-        delete containerParams.audio_configuration;
-        try {
-          containerResponse = await graphApi.post(
-            `${graphBase}/${instagramAccountId}/media`,
-            null,
-            { params: containerParams }
-          );
-        } catch (retryError) {
-          throw formatMetaError(
-            retryError,
-            `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
-          );
-        }
-      } else {
-        throw formatMetaError(
-          error,
-          `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
-        );
-      }
+      throw formatMetaError(
+        error,
+        `Instagram ${mediaType === "REELS" ? "Reel" : "video"} container creation failed`
+      );
     }
 
     const creationId =
@@ -1624,7 +1580,24 @@ const processSchedule =
           resourceType: "video",
         };
         content.generatedAutomatically = true;
+        content.audioMode = "original";
         await content.save();
+      } else if (
+        content.generatedAutomatically &&
+        content.audioMode === "legacy" &&
+        String(content.media?.publicId || "").startsWith("ecommerce/reels/")
+      ) {
+        // Existing generated photo Reels contain the old synthetic track.
+        // Replace that asset once with a newly generated silent Reel.
+        const oldMedia = content.media;
+        const generatedMedia = await generateProductImageReelAsset(product);
+        content.type = "reel";
+        content.media = generatedMedia;
+        content.audioMode = "none";
+        await content.save();
+        if (oldMedia?.publicId !== generatedMedia.publicId) {
+          await deleteGeneratedReelAsset(oldMedia);
+        }
       } else if (
         lockedSchedule.generateNewContent &&
         lockedSchedule.repeatEnabled &&
@@ -1639,6 +1612,7 @@ const processSchedule =
         content.type = "reel";
         content.media = generatedMedia;
         content.generatedAutomatically = true;
+        content.audioMode = "none";
         await content.save();
         if (oldMedia?.publicId !== generatedMedia.publicId) {
           await deleteGeneratedReelAsset(oldMedia);
@@ -1650,6 +1624,7 @@ const processSchedule =
         content.type = "reel";
         content.media = generatedMedia;
         content.generatedAutomatically = true;
+        content.audioMode = "none";
         await content.save();
       }
 

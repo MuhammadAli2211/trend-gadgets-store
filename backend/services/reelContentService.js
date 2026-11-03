@@ -241,6 +241,8 @@ const generateFreshReelContent = async ({
 
       generatedAutomatically: true,
 
+      audioMode: videoUrl ? "original" : "none",
+
       status: "approved",
 
       createdBy,

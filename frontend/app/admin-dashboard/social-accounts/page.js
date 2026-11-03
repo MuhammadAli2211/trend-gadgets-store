@@ -94,7 +94,7 @@ export default function SocialAccountsPage() {
       }
 
       if (params.get("instagram") === "connected") {
-        setMessage("Instagram connected through Facebook. Reels can use available trending music.");
+        setMessage("Instagram connected through Facebook. Reels made from product photos will post without added music.");
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 

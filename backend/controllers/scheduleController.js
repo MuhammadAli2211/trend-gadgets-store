@@ -3,6 +3,7 @@ const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
 const mongoose = require("mongoose");
 const axios = require("axios");
+const directHttp = axios.create({ proxy: false, timeout: 8_000 });
 const {
   deletePreviousPublishedPost,
 } = require("../services/publishService");
@@ -882,7 +883,7 @@ const resolveFacebookReelId = async (rawUrl) => {
 
     let response;
     try {
-      response = await axios.get(currentUrl.href, {
+      response = await directHttp.get(currentUrl.href, {
         maxRedirects: 0,
         timeout: 8000,
         responseType: "text",

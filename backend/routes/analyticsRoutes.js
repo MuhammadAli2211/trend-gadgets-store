@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const graphApi = axios.create({ proxy: false, timeout: 30_000 });
 
 const Analytics = require("../models/Analytics");
 const SocialAccount = require("../models/SocialAccount");
@@ -281,7 +282,7 @@ const fetchAllGraphPages = async (url, params, maxPages = 10) => {
   const seenCursors = new Set();
 
   for (let page = 0; page < maxPages; page += 1) {
-    const response = await axios.get(url, {
+    const response = await graphApi.get(url, {
       params: { ...params, limit: 100, ...(after ? { after } : {}) },
     });
     const data = response.data?.data || [];
@@ -361,7 +362,7 @@ const syncInstagramAnalytics =
           const metricsToTry = isVideo ? ["views", "plays"] : ["views", "impressions"];
           for (const metricName of metricsToTry) {
             try {
-              const response = await axios.get(
+              const response = await graphApi.get(
                 `${INSTAGRAM_GRAPH_BASE}/${item.id}/insights`,
                 { params: { metric: metricName, access_token: account.accessToken } }
               );
@@ -373,7 +374,7 @@ const syncInstagramAnalytics =
           }
           if (isVideo) {
             try {
-              const response = await axios.get(
+              const response = await graphApi.get(
                 `${INSTAGRAM_GRAPH_BASE}/${item.id}/insights`,
                 { params: { metric: "shares", access_token: account.accessToken } }
               );
@@ -531,7 +532,7 @@ const syncFacebookAnalytics =
 
       try {
         const insightMetric = "post_media_view";
-        const insightsResponse = await axios.get(
+        const insightsResponse = await graphApi.get(
           `${META_GRAPH_BASE}/${post.id}/insights`,
           { params: { metric: insightMetric, access_token: account.accessToken } }
         );
