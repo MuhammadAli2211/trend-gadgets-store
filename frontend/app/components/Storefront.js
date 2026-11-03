@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import api from "../../lib/api";
@@ -12,6 +12,7 @@ const formatPrice = (value) =>
 
 const CART_STORAGE_KEY = "cart2door-cart";
 const CART_CHANGE_EVENT = "cart2door-cart-change";
+const SHOP_VIEW_STORAGE_KEY = "cart2door-shop-view";
 const getCartSnapshot = () => {
   try { return window.localStorage.getItem(CART_STORAGE_KEY) || "[]"; } catch { return "[]"; }
 };
@@ -36,6 +37,7 @@ export default function Storefront() {
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const pendingShopViewRestore = useRef(null);
   const cartSnapshot = useSyncExternalStore(subscribeToCart, getCartSnapshot, getServerCartSnapshot);
   const cart = useMemo(() => parseCartSnapshot(cartSnapshot), [cartSnapshot]);
   const setCart = useCallback((update) => {
@@ -49,6 +51,48 @@ export default function Storefront() {
   const [showCart, setShowCart] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const rememberProductListPosition = (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    try {
+      sessionStorage.setItem(SHOP_VIEW_STORAGE_KEY, JSON.stringify({
+        scrollY: window.scrollY,
+        search,
+        category,
+      }));
+    } catch {}
+  };
+
+  useEffect(() => {
+    let restoreFrameId;
+    try {
+      const savedView = sessionStorage.getItem(SHOP_VIEW_STORAGE_KEY);
+      if (!savedView) return;
+      const parsedView = JSON.parse(savedView);
+      pendingShopViewRestore.current = parsedView;
+      restoreFrameId = window.requestAnimationFrame(() => {
+        if (typeof parsedView.search === "string") setSearch(parsedView.search);
+        if (typeof parsedView.category === "string") setCategory(parsedView.category);
+      });
+    } catch {
+      try { sessionStorage.removeItem(SHOP_VIEW_STORAGE_KEY); } catch {}
+    }
+    return () => {
+      if (restoreFrameId) window.cancelAnimationFrame(restoreFrameId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading || error || !pendingShopViewRestore.current) return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      const savedView = pendingShopViewRestore.current;
+      if (!savedView) return;
+      window.scrollTo(0, Math.max(0, Number(savedView.scrollY) || 0));
+      pendingShopViewRestore.current = null;
+      sessionStorage.removeItem(SHOP_VIEW_STORAGE_KEY);
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [loading, error, products.length, search, category]);
 
   useEffect(() => {
     let active = true;
@@ -226,14 +270,14 @@ export default function Storefront() {
                 const image = product.images?.[0]?.url;
                 return (
                   <article key={product._id} className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg sm:rounded-2xl">
-                    <Link href={`/product/${product._id}`} className="block">
+                    <Link href={`/product/${product._id}`} onClick={rememberProductListPosition} className="block">
                       <div className="relative aspect-square overflow-hidden bg-slate-100">
                         {image ? <Image src={image} alt={product.name} fill sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 25vw" className="object-cover transition duration-300 group-hover:scale-[1.03]" /> : product.video?.url ? <video src={product.video.url} muted playsInline preload="metadata" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-sm text-slate-400">No image available</div>}
                       </div>
                     </Link>
                     <div className="flex flex-1 flex-col p-2.5 sm:p-4">
                       <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-500 sm:text-xs">{normalizeProductCategory(product.category)}</p>
-                      <Link href={`/product/${product._id}`} className="mt-1 line-clamp-2 min-h-10 text-xs font-semibold leading-5 text-slate-900 hover:text-emerald-700 sm:min-h-12 sm:text-base">{product.name}</Link>
+                      <Link href={`/product/${product._id}`} onClick={rememberProductListPosition} className="mt-1 line-clamp-2 min-h-10 text-xs font-semibold leading-5 text-slate-900 hover:text-emerald-700 sm:min-h-12 sm:text-base">{product.name}</Link>
                       {product.description && <p className="mt-1 line-clamp-1 text-[10px] text-slate-500 sm:mt-2 sm:line-clamp-2 sm:text-sm">{product.description}</p>}
                       <div className="mt-auto flex items-end justify-between gap-2 pt-3 sm:gap-3 sm:pt-4">
                         <div>
