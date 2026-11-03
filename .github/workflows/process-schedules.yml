@@ -7,12 +7,16 @@ on:
   schedule:
     # Minute offset change also reactivates a schedule that GitHub has stopped.
     - cron: "5,20,35,50 3-14 * * *"
-  # Kick the worker immediately when the schedule itself is updated.
+  # Kick the worker when posting code or schedule policy changes are deployed.
   push:
     branches:
       - main
     paths:
       - .github/workflows/process-schedules.yml
+      - backend/services/publishService.js
+      - backend/services/automaticScheduleService.js
+      - backend/server.js
+      - backend/vercel.json
   workflow_dispatch:
 
 permissions: {}
