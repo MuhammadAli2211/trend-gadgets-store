@@ -5,7 +5,14 @@ on:
   # busiest top-of-hour queue window used by GitHub scheduled workflows.
   # GitHub schedule times are UTC; Pakistan is UTC+5.
   schedule:
-    - cron: "2,17,32,47 3-14 * * *"
+    # Minute offset change also reactivates a schedule that GitHub has stopped.
+    - cron: "5,20,35,50 3-14 * * *"
+  # Kick the worker immediately when the schedule itself is updated.
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/process-schedules.yml
   workflow_dispatch:
 
 permissions: {}
