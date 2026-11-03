@@ -629,30 +629,51 @@
         const linkedInstagram = selectedPage.instagram_business_account;
         let instagramConnected = false;
         if (linkedInstagram?.id) {
+          const linkedInstagramId = String(linkedInstagram.id);
+          const linkedInstagramUsername = linkedInstagram.username || "";
+          const instagramIdentity = [{ accountId: linkedInstagramId }];
+          if (linkedInstagramUsername) {
+            instagramIdentity.push({ instagramUsername: linkedInstagramUsername });
+          }
           let instagramAccount = await SocialAccount.findOne({
             platform: "instagram",
-            accountId: String(linkedInstagram.id),
-          });
+            $or: instagramIdentity,
+          }).sort({ updatedAt: -1 });
           if (!instagramAccount) {
             instagramAccount = new SocialAccount({
               platform: "instagram",
-              accountName: linkedInstagram.username || selectedPage.name,
-              accountId: String(linkedInstagram.id),
+              accountName: linkedInstagramUsername || selectedPage.name,
+              accountId: linkedInstagramId,
             });
           }
-          instagramAccount.accountName = linkedInstagram.username || selectedPage.name;
-          instagramAccount.accountId = String(linkedInstagram.id);
-          instagramAccount.instagramAccountId = String(linkedInstagram.id);
-          instagramAccount.instagramUsername = linkedInstagram.username || "";
-          instagramAccount.accessToken = selectedPage.access_token;
+
+          // Do not replace a direct Instagram Login token with the Facebook
+          // Page token when the Page is reconnected later. Meta can issue
+          // different account IDs for the two login products, so username is
+          // also used above to keep them attached to the same local account.
+          const keepDirectInstagramToken =
+            instagramAccount.tokenType === "instagram_business_login" &&
+            Boolean(instagramAccount.accessToken);
+
+          instagramAccount.accountName = linkedInstagramUsername || selectedPage.name;
+          instagramAccount.instagramUsername = linkedInstagramUsername;
           instagramAccount.pageId = String(selectedPage.id);
           instagramAccount.pageName = selectedPage.name;
-          instagramAccount.tokenType = "facebook_login";
+
+          if (!keepDirectInstagramToken) {
+            instagramAccount.accountId = linkedInstagramId;
+            instagramAccount.instagramAccountId = linkedInstagramId;
+            instagramAccount.accessToken = selectedPage.access_token;
+            instagramAccount.tokenType = "facebook_login";
+          }
+
           instagramAccount.status = "connected";
           await instagramAccount.save();
           instagramConnected = true;
-          console.log("Linked Instagram account saved through Facebook Login.", {
-            instagramAccountId: String(linkedInstagram.id),
+          console.log("Facebook Page linked to its Instagram account.", {
+            instagramAccountId: instagramAccount.instagramAccountId,
+            tokenType: instagramAccount.tokenType,
+            preservedDirectInstagramToken: keepDirectInstagramToken,
           });
         } else {
           console.warn("Facebook Page has no linked Instagram Professional account.");
@@ -1090,14 +1111,18 @@
         ==================================================
         */
 
+        const instagramIdentity = [{ accountId: String(finalInstagramId) }];
+        if (instagramProfile.username) {
+          instagramIdentity.push({
+            instagramUsername: instagramProfile.username,
+          });
+        }
+
         let instagramSocialAccount =
           await SocialAccount.findOne({
-            platform:
-              "instagram",
-
-            accountId:
-              String(finalInstagramId),
-          });
+            platform: "instagram",
+            $or: instagramIdentity,
+          }).sort({ updatedAt: -1 });
 
 
         if (!instagramSocialAccount) {

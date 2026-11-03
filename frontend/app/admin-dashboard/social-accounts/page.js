@@ -94,7 +94,7 @@ export default function SocialAccountsPage() {
       }
 
       if (params.get("instagram") === "connected") {
-        setMessage("Instagram connected through Facebook. Reels made from product photos will post without added music.");
+        setMessage("Instagram account connected. The next Instagram retry will confirm publishing access.");
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
@@ -226,6 +226,14 @@ export default function SocialAccountsPage() {
 
   const instagramAccounts = accounts.filter(
     (account) => account.platform === "instagram"
+  );
+
+  const instagramBusinessLoginAccount = instagramAccounts.find(
+    (account) => account.tokenType === "instagram_business_login"
+  );
+
+  const facebookLoginInstagramAccount = instagramAccounts.find(
+    (account) => account.tokenType === "facebook_login"
   );
 
   const tiktokAccounts = accounts.filter(
@@ -418,23 +426,33 @@ export default function SocialAccountsPage() {
 
             </div>
 
-            {instagramAccounts.length > 0 && instagramAccounts.some((account) => account.tokenType === "facebook_login") ? (
-              <span style={styles.connectedBadge}>
-                <span style={styles.greenDot}></span>
-                Connected with Facebook
-              </span>
-            ) : (
+            <div style={styles.connectionActions}>
+              {instagramAccounts.length > 0 && (
+                <span style={styles.connectedBadge}>
+                  <span style={styles.greenDot}></span>
+                  {instagramBusinessLoginAccount
+                    ? "Connected through Instagram"
+                    : facebookLoginInstagramAccount
+                      ? "Connected with Facebook"
+                      : "Instagram connected"}
+                </span>
+              )}
+
               <button
-                onClick={connectFacebook}
-                disabled={connecting}
+                onClick={connectInstagram}
+                disabled={instagramConnecting}
                 style={{
                   ...styles.instagramConnectButton,
-                  opacity: connecting ? 0.7 : 1,
+                  opacity: instagramConnecting ? 0.7 : 1,
                 }}
               >
-                {connecting ? "Connecting..." : "Connect Instagram with Facebook"}
+                {instagramConnecting
+                  ? "Connecting..."
+                  : instagramAccounts.length > 0
+                    ? "Reconnect Instagram publishing"
+                    : "Connect Instagram for publishing"}
               </button>
-            )}
+            </div>
 
           </div>
 
@@ -491,12 +509,6 @@ export default function SocialAccountsPage() {
               <span>○</span>
               No Instagram account connected.
             </div>
-          )}
-
-          {instagramAccounts.some((account) => account.tokenType !== "facebook_login") && (
-            <p style={styles.notConnected}>
-              Reels music ke liye Instagram ko linked Facebook Page se ek baar reconnect karein.
-            </p>
           )}
 
         </div>
@@ -817,6 +829,14 @@ const styles = {
     fontWeight: "600",
     cursor: "pointer",
     whiteSpace: "nowrap",
+  },
+
+  connectionActions: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "8px",
+    flexWrap: "wrap",
   },
 
   connectedBadge: {
