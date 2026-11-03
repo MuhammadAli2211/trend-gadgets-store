@@ -10,6 +10,12 @@ on:
 
 permissions: {}
 
+# Do not let two cron/manual invocations race the same social accounts or
+# publish multiple overdue Reels at once.
+concurrency:
+  group: cart2door-social-publisher
+  cancel-in-progress: false
+
 jobs:
   process-due-schedules:
     runs-on: ubuntu-latest

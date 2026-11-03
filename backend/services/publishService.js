@@ -1588,6 +1588,14 @@ const processSchedule =
           lockedSchedule
         );
 
+      // Instagram Reel processing can take much longer than Facebook's
+      // start/upload handshake. Attempt Instagram first so a slow Facebook
+      // upload cannot consume the entire Vercel invocation before Instagram.
+      platforms.sort((left, right) => {
+        const priority = { instagram: 0, facebook: 1 };
+        return (priority[left] ?? 2) - (priority[right] ?? 2);
+      });
+
       if (platforms.length === 0) {
         throw new Error(
           "No publishing platform selected."
@@ -2000,26 +2008,31 @@ const processSchedule =
 
       if (
         lockedSchedule.repeatEnabled &&
-        failedResults.length > 0 &&
-        Number(lockedSchedule.retryCount || 0) < 3
+        failedResults.length > 0
       ) {
         const retryForScheduledAt =
           lockedSchedule.retryForScheduledAt ||
           lockedSchedule.scheduledAt;
-        const retryAt = new Date(Date.now() + 60 * 1000);
+        const retryDelaysMinutes = [15, 30, 60];
+        const retriesAlreadyUsed = Math.max(0, Number(lockedSchedule.retryCount || 0));
+        const retryDelayMinutes = retriesAlreadyUsed < retryDelaysMinutes.length
+          ? retryDelaysMinutes[retriesAlreadyUsed]
+          : 24 * 60;
+        const retryAt = new Date(Date.now() + retryDelayMinutes * 60 * 1000);
 
         lockedSchedule.retryOnlyFailed = true;
-        lockedSchedule.retryCount = Number(lockedSchedule.retryCount || 0) + 1;
+        lockedSchedule.retryCount = Math.min(retriesAlreadyUsed + 1, retryDelaysMinutes.length + 1);
         lockedSchedule.retryForScheduledAt = retryForScheduledAt;
         lockedSchedule.scheduledAt = retryAt;
         lockedSchedule.status = "scheduled";
         lockedSchedule.errorMessage = failedResults
           .map((item) => `${item.platform}: ${item.error}`)
-          .join(" | ");
+          .join(" | ") + ` Next retry in ${retryDelayMinutes} minutes.`;
 
         await lockedSchedule.save();
 
         console.log("Retrying failed platforms without reposting successful platforms.");
+        console.log(`Retry delay: ${retryDelayMinutes} minute(s).`);
         console.log("Retry scheduled for:", retryAt);
 
         return {
@@ -2278,8 +2291,16 @@ const processDueSchedules =
         const uncertainResult = currentRunResults.find((post) => post.attempting);
 
         if (uncertainResult) {
-          schedule.status = "failed";
-          schedule.errorMessage = `${uncertainResult.platform} publishing was interrupted before the platform confirmed the result. Check the social page before retrying to avoid a duplicate post.`;
+          // Keep confirmed platform results intact and retry only the platform
+          // whose response was interrupted. A 24-hour delay gives the social
+          // platform time to expose a post whose publish response was lost.
+          schedule.retryOnlyFailed = true;
+          schedule.retryForScheduledAt = schedule.retryForScheduledAt || schedule.scheduledAt;
+          schedule.retryCount = Math.max(4, Number(schedule.retryCount || 0));
+          schedule.retryRecoveryApplied = true;
+          schedule.scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          schedule.status = "scheduled";
+          schedule.errorMessage = `${uncertainResult.platform} publishing result was not confirmed before the worker timed out. Only that platform will retry in 24 hours; confirm it did not publish before then to avoid a possible duplicate.`;
           await schedule.save();
           continue;
         }
