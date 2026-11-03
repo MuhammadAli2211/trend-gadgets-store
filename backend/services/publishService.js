@@ -1,6 +1,9 @@
 
 const axios = require("axios");
-const graphApi = axios.create({ timeout: 15_000 });
+// Social publishing must reach Meta directly. The serverless runtime may have
+// HTTP(S)_PROXY variables pointing at a non-existent localhost proxy; Axios
+// otherwise routes every Meta request through it and fails with ECONNREFUSED.
+const graphApi = axios.create({ timeout: 15_000, proxy: false });
 
 const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
