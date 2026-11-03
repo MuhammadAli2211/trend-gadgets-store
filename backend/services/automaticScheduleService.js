@@ -140,14 +140,19 @@ const ensureAutomaticSchedules = async () => {
   for (const plan of plans) {
     const current = plan.reusableSchedule;
     let scheduledAt;
+    const currentScheduledAt = current?.scheduledAt ? new Date(current.scheduledAt) : null;
+    const currentScheduledAtMs = currentScheduledAt?.getTime() || 0;
+    const currentSlotIsDue = currentScheduledAtMs <= Date.now() && plan.notBefore <= Date.now();
 
     if (
       current?.autoManaged &&
       current.status === "scheduled" &&
-      new Date(current.scheduledAt).getTime() > Date.now() &&
-      isPostingHour(new Date(current.scheduledAt))
+      isPostingHour(currentScheduledAt) &&
+      (currentScheduledAtMs >= plan.notBefore || currentSlotIsDue)
     ) {
-      scheduledAt = new Date(current.scheduledAt);
+      // Keep an eligible overdue slot due so the worker can publish it below.
+      // Moving it to the next future slot here made successful cron runs skip posts.
+      scheduledAt = currentScheduledAt;
       occupiedTimes.push(scheduledAt.getTime());
     } else {
       scheduledAt = findNextFreePostingSlot(plan.notBefore, occupiedTimes, repeatEveryDays);
@@ -245,7 +250,13 @@ const ensureAutomaticSchedules = async () => {
   for (const plan of normalizationPlans) {
     const { schedule, notBefore } = plan;
     const currentTime = new Date(schedule.scheduledAt).getTime();
-    const nextTime = findNextFreePostingSlot(notBefore, normalizedTimes, repeatEveryDays);
+    const currentSlotIsDue =
+      currentTime <= Date.now() &&
+      notBefore <= Date.now() &&
+      isPostingHour(new Date(currentTime));
+    const nextTime = currentSlotIsDue
+      ? new Date(currentTime)
+      : findNextFreePostingSlot(notBefore, normalizedTimes, repeatEveryDays);
 
     if (!nextTime) {
       deferred += 1;
