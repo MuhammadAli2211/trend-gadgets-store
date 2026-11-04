@@ -255,6 +255,9 @@ const ensureAutomaticSchedules = async () => {
     const content = eligibleContents.find((item) => String(item._id) === scheduledContentId) || eligibleContents[0];
     if (!content) return null;
 
+    const hasStoredPlatformFailure = (reusableSchedule?.publishedPosts || [])
+      .some((post) => !post.success && !post.manualRequired);
+
     const oldTime = reusableSchedule?.scheduledAt ? new Date(reusableSchedule.scheduledAt).getTime() : 0;
     const needsFreshQueue = Boolean(reusableSchedule && (
       reusableSchedule.repeatEnabled ||
@@ -262,7 +265,7 @@ const ensureAutomaticSchedules = async () => {
       reusableSchedule.generateNewContent
     ));
     const preserveRetry = Boolean(
-      reusableSchedule?.retryOnlyFailed &&
+      (reusableSchedule?.retryOnlyFailed || hasStoredPlatformFailure) &&
       reusableSchedule.status === "scheduled" &&
       !needsFreshQueue
     );
@@ -283,7 +286,7 @@ const ensureAutomaticSchedules = async () => {
     const currentScheduledAtMs = currentScheduledAt?.getTime() || 0;
     const currentSlotIsDue = currentScheduledAtMs <= Date.now() && plan.notBefore <= Date.now();
     const preserveRetry = Boolean(
-      current?.retryOnlyFailed &&
+      (current?.retryOnlyFailed || (current?.publishedPosts || []).some((post) => !post.success && !post.manualRequired)) &&
       current.status === "scheduled" &&
       !current.repeatEnabled &&
       !current.autoDeletePrevious &&
@@ -337,6 +340,14 @@ const ensureAutomaticSchedules = async () => {
     target.autoDeletePrevious = false;
     target.autoManaged = true;
     target.status = "scheduled";
+    target.retryOnlyFailed = preserveRetry;
+    if (preserveRetry && !target.errorMessage) {
+      const failureDetails = (target.publishedPosts || [])
+        .filter((post) => !post.success && !post.manualRequired)
+        .map((post) => `${post.platform}: ${post.error || "previous publishing attempt failed"}`)
+        .join(" | ");
+      target.errorMessage = failureDetails || "A previous platform attempt failed; the failed platform will retry at the scheduled time.";
+    }
     if (!preserveRetry) {
       target.retryOnlyFailed = false;
       target.retryCount = 0;

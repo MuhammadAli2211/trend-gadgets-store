@@ -560,6 +560,12 @@ return ( <main className="min-h-screen bg-gray-100">
                 .filter((post) => !post.success && !post.manualRequired)
                 .map((post) => getPlatformLabel(post.platform));
               const isRetrying = schedule.status === "scheduled" && (retryingPlatforms.length > 0 || Boolean(schedule.errorMessage));
+              const platformFailureDetails = publishedPosts
+                .filter((post) => !post.success && !post.manualRequired && post.error)
+                .map((post) => `${getPlatformLabel(post.platform)}: ${post.error}`)
+                .join(" | ");
+              const retryInformation = schedule.errorMessage || platformFailureDetails ||
+                (isRetrying ? "Retry is queued, but the previous platform error detail was not saved." : "");
               const displayStatus = isRetrying
                 ? `Retrying${retryingPlatforms.length ? ` ${retryingPlatforms.join(" + ")}` : ""}`
                 : getStatusLabel(schedule.status);
@@ -632,10 +638,10 @@ return ( <main className="min-h-screen bg-gray-100">
                       </div>
                     </div>
 
-                    {schedule.errorMessage && (
+                    {retryInformation && (
                       <div className={`rounded-lg border p-3 ${schedule.status === "manual_required" ? "border-amber-200 bg-amber-50" : isRetrying ? "border-amber-200 bg-amber-50" : "border-red-200 bg-red-50"}`}>
                         <p className={`text-xs font-semibold ${schedule.status === "manual_required" || isRetrying ? "text-amber-900" : "text-red-800"}`}>{isRetrying ? "Retry information" : "What happened"}</p>
-                        <p className={`mt-1 break-words text-xs leading-5 ${schedule.status === "manual_required" || isRetrying ? "text-amber-800" : "text-red-700"}`}>{schedule.errorMessage}</p>
+                        <p className={`mt-1 break-words text-xs leading-5 ${schedule.status === "manual_required" || isRetrying ? "text-amber-800" : "text-red-700"}`}>{retryInformation}</p>
                       </div>
                     )}
 
