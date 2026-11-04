@@ -1,12 +1,13 @@
 name: Process scheduled social posts
 
 on:
-  # Pakistan daytime (08:07–19:52 PKT), every 15 minutes, offset from the
+  # Pakistan daytime (08:08–19:05 PKT), every 15 minutes, offset from the
   # busiest top-of-hour queue window used by GitHub scheduled workflows.
   # GitHub schedule times are UTC; Pakistan is UTC+5.
   schedule:
     # Minute offset change also reactivates a schedule that GitHub has stopped.
-    - cron: "7,22,37,52 3-14 * * *"
+    - cron: "8,23,38,53 3-13 * * *"
+    - cron: "5 14 * * *"
   # Kick the worker when posting code or schedule policy changes are deployed.
   push:
     branches:
