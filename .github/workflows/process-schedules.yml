@@ -30,10 +30,26 @@ concurrency:
 jobs:
   process-due-schedules:
     runs-on: ubuntu-latest
-    # The Vercel function may need time to wait for Instagram to finish
-    # processing a Reel before it can publish and save the result.
-    timeout-minutes: 5
+    # Wait for Vercel's production alias to serve this commit before asking it
+    # to process schedules. GitHub's push event can arrive before deployment.
+    timeout-minutes: 20
     steps:
+      - name: Wait for this commit to reach the production API
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          for attempt in $(seq 1 90); do
+            deployed_commit="$(curl --fail --silent --show-error --max-time 10 \
+              https://trend-gadgets-api.vercel.app/api/health | jq -r '.deploymentCommit // empty')" || deployed_commit=""
+            if [ "$deployed_commit" = "$EXPECTED_COMMIT" ]; then
+              echo "Production API is serving $EXPECTED_COMMIT"
+              exit 0
+            fi
+            echo "Waiting for production deployment ($attempt/90); API serves ${deployed_commit:-unknown}"
+            sleep 10
+          done
+          echo "Production API did not deploy $EXPECTED_COMMIT; refusing to run the posting worker against old code."
+          exit 1
       - name: Call the protected schedule worker
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}

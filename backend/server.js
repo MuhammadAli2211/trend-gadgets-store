@@ -145,6 +145,7 @@ app.get("/api/health", (req, res) => {
   res.json({
     success: true,
     message: "Server is healthy",
+    deploymentCommit: process.env.VERCEL_GIT_COMMIT_SHA || "unknown",
     database:
       mongoose.connection.readyState === 1
         ? "connected"
