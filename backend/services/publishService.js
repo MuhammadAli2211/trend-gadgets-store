@@ -1,5 +1,7 @@
 
 const axios = require("axios");
+const crypto = require("crypto");
+const mongoose = require("mongoose");
 // Social publishing must reach Meta directly. The serverless runtime may have
 // HTTP(S)_PROXY variables pointing at a non-existent localhost proxy; Axios
 // otherwise routes every Meta request through it and fails with ECONNREFUSED.
@@ -2124,7 +2126,7 @@ const processSchedule =
 // PROCESS DUE SCHEDULES
 // ======================================================
 
-const processDueSchedules =
+const runDueSchedulePass =
   async () => {
     try {
       try {
@@ -2372,6 +2374,51 @@ const processDueSchedules =
       throw error;
     }
   };
+
+const SCHEDULE_WORKER_LOCK_KEY = "social-publisher";
+const SCHEDULE_WORKER_LEASE_MS = 7 * 60 * 1000;
+
+const acquireScheduleWorkerLock = async (owner) => {
+  const now = new Date();
+  try {
+    await mongoose.connection.collection("schedule_worker_locks").findOneAndUpdate(
+      {
+        _id: SCHEDULE_WORKER_LOCK_KEY,
+        $or: [
+          { leaseUntil: { $lte: now } },
+          { leaseUntil: { $exists: false } },
+        ],
+      },
+      { $set: { owner, leaseUntil: new Date(now.getTime() + SCHEDULE_WORKER_LEASE_MS) } },
+      { upsert: true }
+    );
+    return true;
+  } catch (error) {
+    if (error.code === 11000) return false;
+    throw error;
+  }
+};
+
+const processDueSchedules = async () => {
+  const owner = crypto.randomUUID();
+  const acquired = await acquireScheduleWorkerLock(owner);
+  if (!acquired) {
+    return { due: 0, processed: 0, schedules: [], message: "Another schedule worker is already running." };
+  }
+
+  try {
+    return await runDueSchedulePass();
+  } finally {
+    try {
+      await mongoose.connection.collection("schedule_worker_locks").deleteOne({
+        _id: SCHEDULE_WORKER_LOCK_KEY,
+        owner,
+      });
+    } catch (error) {
+      console.error("Could not release schedule worker lock:", error.message);
+    }
+  }
+};
 
 // ======================================================
 // META ERROR FORMAT

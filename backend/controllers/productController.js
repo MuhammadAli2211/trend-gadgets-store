@@ -157,6 +157,9 @@ const createProduct = async (req, res) => {
   const uploadedImages = [];
   const uploadedVideos = [];
   let createdProduct = null;
+  const creationRequestId = typeof req.body?.creationRequestId === "string"
+    ? req.body.creationRequestId.trim()
+    : "";
   try {
     const {
       name,
@@ -200,6 +203,9 @@ const createProduct = async (req, res) => {
     const imageFiles = [...(files.images || []), ...(files.productImage || [])];
     const videoFiles = [...(files.videos || []), ...(files.video || [])];
     const directVideoAssets = parseUploadedVideoAssets(req.body.videoAssets);
+    if (creationRequestId && !/^[a-f0-9-]{36}$/i.test(creationRequestId)) {
+      return res.status(400).json({ success: false, message: "Product submission ID is invalid." });
+    }
     if (directVideoAssets.length + videoFiles.length > 2) {
       return res.status(400).json({ success: false, message: "A product can have up to 2 videos." });
     }
@@ -208,6 +214,16 @@ const createProduct = async (req, res) => {
     }
     if (imageFiles.some((file) => !file.mimetype?.startsWith("image/")) || videoFiles.some((file) => !file.mimetype?.startsWith("video/"))) {
       return res.status(400).json({ success: false, message: "Upload valid product photo and video files." });
+    }
+
+    if (creationRequestId) {
+      const existingRequest = await Product.findOne({ creationRequestId })
+        .select("_id name slug price images video videos")
+        .lean();
+      if (existingRequest) {
+        await Promise.all(directVideoAssets.map((video) => deleteFromCloudinary(video.publicId, "video")));
+        return res.status(200).json({ success: true, message: "Product was already saved.", product: existingRequest });
+      }
     }
 
     for (const file of imageFiles) {
@@ -239,6 +255,7 @@ const createProduct = async (req, res) => {
       category: category.trim(),
       tags: parseTags(tags),
       sku: sku?.trim() || "",
+      ...(creationRequestId ? { creationRequestId } : {}),
       images: uploadedImages,
       video: uploadedVideos[0] || { url: "", publicId: "" },
       videos: uploadedVideos,
@@ -278,6 +295,16 @@ const createProduct = async (req, res) => {
       product,
     });
   } catch (error) {
+    if (error.code === 11000 && creationRequestId) {
+      const existingRequest = await Product.findOne({ creationRequestId })
+        .select("_id name slug price images video videos")
+        .lean();
+      if (existingRequest) {
+        await Promise.all(uploadedImages.map((image) => deleteFromCloudinary(image.publicId)));
+        await Promise.all(uploadedVideos.map((video) => deleteFromCloudinary(video.publicId, "video")));
+        return res.status(200).json({ success: true, message: "Product was already saved.", product: existingRequest });
+      }
+    }
     if (createdProduct) {
       await Product.findByIdAndDelete(createdProduct._id);
     }

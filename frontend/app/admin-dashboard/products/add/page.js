@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "../../../../lib/api";
 import { uploadProductVideo } from "../../../../lib/cloudinaryUpload";
@@ -83,6 +83,7 @@ export default function AddProductPage() {
   const [loading, setLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
   const [error, setError] = useState("");
+  const creationRequestId = useRef(null);
 
   useEffect(() => {
     api.get("/products").then((response) => {
@@ -124,6 +125,8 @@ export default function AddProductPage() {
       Object.entries(form).forEach(([key, value]) => data.append(key, value));
       preparedImages.forEach((file) => data.append("images", file));
       data.append("videoAssets", JSON.stringify(uploadedVideos));
+      creationRequestId.current ||= crypto.randomUUID();
+      data.append("creationRequestId", creationRequestId.current);
       const response = await api.post("/products", data);
       if (response.data.success) router.push("/admin-dashboard/products");
     } catch (requestError) {

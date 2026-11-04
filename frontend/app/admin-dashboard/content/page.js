@@ -9,10 +9,18 @@ import api from "../../../lib/api";
 const chooseContentPerProduct = (items) => {
   const selected = new Map();
   const getPriority = (item) => {
-    if (item?.type === "post" && item?.media?.resourceType === "video") return 4;
-    if (item?.type === "reel") return 3;
-    if (item?.media?.resourceType === "video") return 2;
-    if (item?.type === "post") return 1;
+    const productVideos = [item?.product?.video, ...(item?.product?.videos || [])]
+      .map((asset) => asset?.url)
+      .filter(Boolean);
+    if (productVideos.includes(item?.media?.url)) return 6;
+
+    const oldPhotoReel = item?.generatedAutomatically &&
+      String(item?.media?.publicId || "").startsWith("ecommerce/reels/");
+    if (oldPhotoReel) return 0;
+
+    if (item?.media?.resourceType === "video") return 5;
+    if (item?.type === "post") return 4;
+    if (item?.type === "reel") return 2;
     return 0;
   };
 

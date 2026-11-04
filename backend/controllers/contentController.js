@@ -78,7 +78,7 @@ const getContent = async (req, res) => {
     }
 
     const contents = await Content.find(filter)
-      .populate("product", "name price category images")
+      .populate("product", "name price category images video videos")
       .populate("createdBy", "name email")
       .sort({ createdAt: -1 });
 
@@ -208,7 +208,7 @@ const createContent = async (req, res) => {
     contentCreated = true;
 
     const populatedContent = await Content.findById(content._id)
-      .populate("product", "name price category images")
+      .populate("product", "name price category images video videos")
       .populate("createdBy", "name email");
 
     res.status(201).json({
@@ -346,7 +346,7 @@ const updateContent = async (req, res) => {
     }
 
     const updatedContent = await Content.findById(content._id)
-      .populate("product", "name price category images")
+      .populate("product", "name price category images video videos")
       .populate("createdBy", "name email");
 
     res.json({
@@ -417,7 +417,7 @@ const updateContentStatus = async (req, res) => {
     await content.save();
 
     const updatedContent = await Content.findById(content._id)
-      .populate("product", "name price category images")
+      .populate("product", "name price category images video videos")
       .populate("createdBy", "name email");
 
     res.json({

@@ -50,6 +50,13 @@ const productSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Keeps a browser retry from creating the same product twice when the
+    // original save succeeded but its response was lost.
+    creationRequestId: {
+      type: String,
+      select: false,
+    },
+
     images: [
       {
         url: {
@@ -106,6 +113,14 @@ const productSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+  }
+);
+
+productSchema.index(
+  { creationRequestId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { creationRequestId: { $type: "string" } },
   }
 );
 
