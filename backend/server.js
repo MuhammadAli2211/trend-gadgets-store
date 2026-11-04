@@ -153,7 +153,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Called by Vercel Cron. Keeping the secret out of the URL prevents anyone
+// Called by the protected GitHub Actions worker. Keeping the secret out of the URL prevents anyone
 // from triggering the publisher directly.
 app.get("/api/cron/process-schedules", async (req, res) => {
   const expectedSecret = process.env.CRON_SECRET;

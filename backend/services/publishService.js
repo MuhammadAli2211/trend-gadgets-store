@@ -2260,7 +2260,7 @@ const processDueSchedules =
         await schedule.save();
       }
 
-      // A second worker (including the daily Vercel fallback) must not post
+      // A second worker or overlapping invocation must not post
       // the next product while an Instagram or Facebook upload is still in
       // progress.
       const activeAutomaticPublish = await Schedule.exists({

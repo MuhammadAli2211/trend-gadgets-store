@@ -1,7 +1,7 @@
 name: Process scheduled social posts
 
 on:
-  # Pakistan daytime (08:02–19:47 PKT), every 15 minutes, offset from the
+  # Pakistan daytime (08:07–19:52 PKT), every 15 minutes, offset from the
   # busiest top-of-hour queue window used by GitHub scheduled workflows.
   # GitHub schedule times are UTC; Pakistan is UTC+5.
   schedule:
@@ -39,7 +39,7 @@ jobs:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           for attempt in $(seq 1 90); do
-            deployed_commit="$(curl --fail --silent --show-error --max-time 10 \
+            deployed_commit="$(curl --fail --silent --show-error --max-time 3 \
               https://trend-gadgets-api.vercel.app/api/health | jq -r '.deploymentCommit // empty')" || deployed_commit=""
             if [ "$deployed_commit" = "$EXPECTED_COMMIT" ]; then
               echo "Production API is serving $EXPECTED_COMMIT"
