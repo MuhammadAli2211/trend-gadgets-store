@@ -3,6 +3,7 @@ const Content = require("../models/Content");
 const Schedule = require("../models/Schedule");
 const SocialAccount = require("../models/SocialAccount");
 const { getProductVideoAsset } = require("../utils/productVideo");
+const mongoose = require("mongoose");
 
 const PAKISTAN_OFFSET_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -41,6 +42,109 @@ const findNextFreePostingSlot = (notBefore, occupiedTimes) => {
   }
 
   return null;
+};
+
+const clearHistoricalAutomaticPublishRecords = async () => {
+  const migrations = mongoose.connection.collection("system_migrations");
+  const migrationId = "clear-automatic-publish-history-2026-11-04";
+  let migration = await migrations.findOne({ _id: migrationId });
+  if (migration?.completedAt) return { alreadyCompleted: true, schedules: 0, contents: 0 };
+
+  const cutoff = migration?.cutoffAt || new Date();
+  if (!migration) {
+    try {
+      await migrations.insertOne({ _id: migrationId, cutoffAt: cutoff, startedAt: new Date() });
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      migration = await migrations.findOne({ _id: migrationId });
+    }
+  }
+
+  let schedulesCleared = 0;
+  const schedules = await Schedule.find({ autoManaged: true, status: { $ne: "processing" } });
+  for (const schedule of schedules) {
+    const previousPosts = (schedule.publishedPosts || []).map((post) => post.toObject?.() || post);
+    const keptPosts = previousPosts.filter((post) =>
+      !post.success || (post.publishedAt && new Date(post.publishedAt) > cutoff)
+    );
+    const previousSuccessfulPostIds = new Set(previousPosts
+      .filter((post) => post.success && (!post.publishedAt || new Date(post.publishedAt) <= cutoff))
+      .map((post) => post.postId)
+      .filter(Boolean));
+    const latestSuccessfulPost = keptPosts
+      .filter((post) => post.success)
+      .sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0))[0];
+    const facebookPost = keptPosts
+      .filter((post) => post.success && post.platform === "facebook")
+      .sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0))[0];
+    const pendingPostDeletions = (schedule.pendingPostDeletions || []).filter((item) =>
+      item.queuedAt && new Date(item.queuedAt) > cutoff
+    );
+    const historyWasCleared = previousSuccessfulPostIds.size > 0 ||
+      Boolean(schedule.publishedPostId) ||
+      Boolean(schedule.previousPublishedPostId) ||
+      (schedule.publishedAt && new Date(schedule.publishedAt) <= cutoff) ||
+      (schedule.pendingPostDeletions || []).length !== pendingPostDeletions.length ||
+      schedule.status === "published";
+    if (!historyWasCleared) continue;
+
+    schedule.publishedPosts = keptPosts;
+    schedule.publishedAt = latestSuccessfulPost?.publishedAt || null;
+    schedule.publishedPostId = facebookPost?.postId || "";
+    schedule.publishedUrl = facebookPost?.publishedUrl || "";
+    schedule.previousPublishedPostId = facebookPost?.postId || "";
+    schedule.pendingPostDeletions = pendingPostDeletions;
+
+    // A completed one-time schedule needs a fresh queue entry after its old
+    // social posts and success history have been cleared.
+    if (schedule.status === "published" && !latestSuccessfulPost) {
+      schedule.status = "cancelled";
+      schedule.autoManaged = false;
+    }
+    if (!(schedule.publishedPosts || []).some((post) => !post.success && post.error)) {
+      schedule.lastRunAt = null;
+      schedule.currentRunStartedAt = null;
+      schedule.runCount = 0;
+      if (schedule.status !== "cancelled") schedule.errorMessage = "";
+    }
+    await schedule.save();
+    schedulesCleared += 1;
+  }
+
+  let contentsCleared = 0;
+  const contents = await Content.find({
+    generatedAutomatically: true,
+    createdAt: { $lte: cutoff },
+  });
+  for (const content of contents) {
+    const previousPosts = content.publishedPosts || [];
+    const keptPosts = previousPosts.filter((post) =>
+      post.publishedAt && new Date(post.publishedAt) > cutoff
+    );
+    const hasOldScalarHistory = Boolean(
+      content.publishedPostId || content.publishedUrl ||
+      (content.publishedAt && new Date(content.publishedAt) <= cutoff) ||
+      content.status === "published"
+    );
+    if (!previousPosts.length && !hasOldScalarHistory) continue;
+
+    content.publishedPosts = keptPosts;
+    const latestPost = [...keptPosts].sort((a, b) =>
+      new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0)
+    )[0];
+    content.publishedAt = latestPost?.publishedAt || null;
+    content.publishedPostId = latestPost?.postId || "";
+    content.publishedUrl = latestPost?.publishedUrl || "";
+    if (content.status === "published" && !latestPost) content.status = "approved";
+    await content.save();
+    contentsCleared += 1;
+  }
+
+  await migrations.updateOne(
+    { _id: migrationId },
+    { $set: { cutoffAt: cutoff, completedAt: new Date(), schedulesCleared, contentsCleared } }
+  );
+  return { alreadyCompleted: false, schedules: schedulesCleared, contents: contentsCleared };
 };
 
 const ensureAutomaticSchedules = async () => {
@@ -394,4 +498,9 @@ const ensureAutomaticScheduleForContent = async (content) => {
   return { created: 1, scheduleId: schedule._id, scheduledAt };
 };
 
-module.exports = { ensureAutomaticSchedules, ensureAutomaticScheduleForContent, findNextFreePostingSlot };
+module.exports = {
+  clearHistoricalAutomaticPublishRecords,
+  ensureAutomaticSchedules,
+  ensureAutomaticScheduleForContent,
+  findNextFreePostingSlot,
+};

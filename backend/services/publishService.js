@@ -11,7 +11,11 @@ const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
 const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
-const { ensureAutomaticSchedules, findNextFreePostingSlot } = require("./automaticScheduleService");
+const {
+  clearHistoricalAutomaticPublishRecords,
+  ensureAutomaticSchedules,
+  findNextFreePostingSlot,
+} = require("./automaticScheduleService");
 const { getProductVideoAsset } = require("../utils/productVideo");
 
 const META_GRAPH_VERSION =
@@ -2129,6 +2133,11 @@ const processSchedule =
 const runDueSchedulePass =
   async () => {
     try {
+      const historyReset = await clearHistoricalAutomaticPublishRecords();
+      if (!historyReset.alreadyCompleted) {
+        console.log("Cleared old automatic post history:", historyReset);
+      }
+
       try {
         const autoScheduleResult = await ensureAutomaticSchedules();
         if (autoScheduleResult?.created || autoScheduleResult?.updated) {
@@ -2270,7 +2279,7 @@ const runDueSchedulePass =
         status: "processing",
       });
       if (activeAutomaticPublish) {
-        return { due: 0, processed: 0, schedules: [], message: "An automatic post is already in progress." };
+        return { due: 0, processed: 0, schedules: [], historyReset, message: "An automatic post is already in progress." };
       }
 
       const dueSchedules =
@@ -2294,7 +2303,7 @@ const runDueSchedulePass =
           .select("_id");
 
       if (dueSchedules.length === 0) {
-        return { due: 0, processed: 0, schedules: [] };
+        return { due: 0, processed: 0, schedules: [], historyReset };
       }
 
       // Keep actual successful product posts at least an hour apart even if
@@ -2333,6 +2342,7 @@ const runDueSchedulePass =
             return {
               due: 1,
               processed: 0,
+              historyReset,
               schedules: [{
                 id: currentDue._id.toString(),
                 success: true,
@@ -2367,7 +2377,7 @@ const runDueSchedulePass =
         });
       }
 
-      return { due: dueSchedules.length, processed: schedules.length, schedules };
+      return { due: dueSchedules.length, processed: schedules.length, schedules, historyReset };
 
     } catch (error) {
       console.error("Due schedule worker error:", error);
