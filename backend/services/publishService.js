@@ -9,7 +9,7 @@ const Schedule = require("../models/Schedule");
 const Content = require("../models/Content");
 const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
-const { ensureAutomaticSchedules } = require("./automaticScheduleService");
+const { ensureAutomaticSchedules, findNextFreePostingSlot } = require("./automaticScheduleService");
 const { getProductVideoAsset } = require("../utils/productVideo");
 
 const META_GRAPH_VERSION =
@@ -1944,10 +1944,7 @@ const processSchedule =
       // REPEAT
       // ----------------------------------------------
 
-      if (
-        lockedSchedule.repeatEnabled &&
-        failedResults.length > 0
-      ) {
+      if (failedResults.length > 0) {
         const retryForScheduledAt =
           lockedSchedule.retryForScheduledAt ||
           lockedSchedule.scheduledAt;
@@ -2263,6 +2260,17 @@ const processDueSchedules =
         await schedule.save();
       }
 
+      // A second worker (including the daily Vercel fallback) must not post
+      // the next product while an Instagram or Facebook upload is still in
+      // progress.
+      const activeAutomaticPublish = await Schedule.exists({
+        autoManaged: true,
+        status: "processing",
+      });
+      if (activeAutomaticPublish) {
+        return { due: 0, processed: 0, schedules: [], message: "An automatic post is already in progress." };
+      }
+
       const dueSchedules =
         await Schedule.find({
           status:
@@ -2285,6 +2293,54 @@ const processDueSchedules =
 
       if (dueSchedules.length === 0) {
         return { due: 0, processed: 0, schedules: [] };
+      }
+
+      // Keep actual successful product posts at least an hour apart even if
+      // a worker was offline and several hourly slots became overdue.
+      const automaticScheduleHistory = await Schedule.find({ autoManaged: true })
+        .select("publishedAt publishedPosts")
+        .lean();
+      const lastAutomaticPostAt = automaticScheduleHistory.reduce((latest, schedule) => {
+        const times = [
+          schedule.publishedAt,
+          ...(schedule.publishedPosts || []).filter((post) => post.success).map((post) => post.publishedAt),
+        ];
+        return times.reduce((currentLatest, timestamp) => {
+          const time = timestamp ? new Date(timestamp).getTime() : 0;
+          return Number.isFinite(time) ? Math.max(currentLatest, time) : currentLatest;
+        }, latest);
+      }, 0);
+      const minimumGapMs = 60 * 60 * 1000;
+      if (lastAutomaticPostAt && Date.now() - lastAutomaticPostAt < minimumGapMs) {
+        const currentDue = await Schedule.findById(dueSchedules[0]._id);
+        if (currentDue) {
+          const nextSchedules = await Schedule.find({
+            autoManaged: true,
+            status: "scheduled",
+            _id: { $ne: currentDue._id },
+            scheduledAt: { $gt: new Date() },
+          }).select("scheduledAt").lean();
+          const nextSlot = findNextFreePostingSlot(
+            new Date(lastAutomaticPostAt + minimumGapMs),
+            nextSchedules.map((item) => new Date(item.scheduledAt).getTime()).filter(Number.isFinite)
+          );
+          if (nextSlot) {
+            currentDue.scheduledAt = nextSlot;
+            await currentDue.save();
+            console.log(`Deferred schedule ${currentDue._id} to preserve the one-hour gap: ${nextSlot.toISOString()}`);
+            return {
+              due: 1,
+              processed: 0,
+              schedules: [{
+                id: currentDue._id.toString(),
+                success: true,
+                retrying: Boolean(currentDue.retryOnlyFailed),
+                message: "Moved to the next free hourly slot.",
+                results: [],
+              }],
+            };
+          }
+        }
       }
 
       console.log(

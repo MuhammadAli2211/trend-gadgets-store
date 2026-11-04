@@ -138,7 +138,7 @@ export default function AddProductPage() {
 
   return (
     <main className="min-h-screen bg-gray-100">
-      <header className="border-b bg-white"><div className="mx-auto max-w-4xl px-6 py-5"><h1 className="text-2xl font-bold">Add Product</h1><p className="mt-1 text-sm text-gray-500">Add product details, photos, videos, and social tags.</p></div></header>
+      <header className="border-b bg-white"><div className="mx-auto max-w-4xl px-6 py-5"><h1 className="text-2xl font-bold">Add Product</h1><p className="mt-1 text-sm text-gray-500">New products join the Facebook and Instagram queue. Each posts once in a daytime slot, about an hour apart; old posts are not deleted automatically.</p></div></header>
       <section className="mx-auto max-w-4xl px-6 py-8">
         <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border bg-white p-6 shadow-sm">
           {error && <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</div>}

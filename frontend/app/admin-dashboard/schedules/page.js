@@ -402,12 +402,6 @@ const processingCount = schedules.filter((item) => item.status === "processing")
 const nextSchedule = schedules
   .filter((item) => ["scheduled", "processing"].includes(item.status))
   .sort((left, right) => new Date(left.scheduledAt) - new Date(right.scheduledAt))[0];
-const automaticSchedules = schedules.filter((item) => item.autoManaged && item.status === "scheduled");
-const repeatCadenceDays = automaticSchedules.reduce(
-  (max, item) => Math.max(max, Number(item.repeatEvery) || 7),
-  Math.max(7, Math.ceil(automaticSchedules.length / 12))
-);
-const remainingSlotsAtCurrentCadence = Math.max(0, repeatCadenceDays * 12 - automaticSchedules.length);
 const filteredSchedules = schedules.filter((item) => {
   const productName = getProductName(item).toLowerCase();
   const caption = getContentCaption(item).toLowerCase();
@@ -437,7 +431,7 @@ return ( <main className="min-h-screen bg-gray-100">
             Facebook and Instagram posts run automatically from 8 AM to 7 PM, with about one hour between products.
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Each product repeats every {repeatCadenceDays} days. {remainingSlotsAtCurrentCadence} more products fit before the repeat gap grows.
+            Each product posts once. Old posts stay on your social accounts and are not deleted automatically.
           </p>
         </div>
 

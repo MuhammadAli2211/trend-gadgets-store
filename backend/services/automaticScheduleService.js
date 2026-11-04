@@ -7,9 +7,7 @@ const { getProductVideoAsset } = require("../utils/productVideo");
 const PAKISTAN_OFFSET_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-const MIN_REPEAT_DAYS = 7;
-// 8:00 AM–7:00 PM Pakistan time provides 84 weekly hourly slots, enough for
-// the current 81 active products to repeat every 7 days without collisions.
+// Queue posts between 8:00 AM and 7:00 PM Pakistan time, one per hour.
 const POSTING_HOURS = Array.from({ length: 12 }, (_, index) => index + 8);
 
 const toPakistanParts = (date) => {
@@ -28,16 +26,7 @@ const isPostingHour = (date) => {
   return POSTING_HOURS.includes(hour) && minute === 0;
 };
 
-const recurringGapIsFree = (candidate, occupiedTimes, repeatDays) => {
-  const cycleMs = Math.max(MIN_REPEAT_DAYS, Number(repeatDays) || MIN_REPEAT_DAYS) * DAY_MS;
-  return occupiedTimes.every((time) => {
-    const rawGap = Math.abs(time - candidate) % cycleMs;
-    const recurringGap = Math.min(rawGap, cycleMs - rawGap);
-    return recurringGap >= HOUR_MS;
-  });
-};
-
-const findNextFreePostingSlot = (notBefore, occupiedTimes, repeatDays) => {
+const findNextFreePostingSlot = (notBefore, occupiedTimes) => {
   const minimum = Math.max(Date.now(), new Date(notBefore || Date.now()).getTime());
   const pakistanDate = toPakistanParts(new Date(minimum));
   const firstDayUtc = Date.UTC(pakistanDate.year, pakistanDate.month, pakistanDate.day);
@@ -46,7 +35,7 @@ const findNextFreePostingSlot = (notBefore, occupiedTimes, repeatDays) => {
     for (const hour of POSTING_HOURS) {
       const candidate = firstDayUtc + day * DAY_MS + hour * HOUR_MS - PAKISTAN_OFFSET_MS;
       if (candidate < minimum) continue;
-      if (!recurringGapIsFree(candidate, occupiedTimes, repeatDays)) continue;
+      if (occupiedTimes.some((time) => Math.abs(time - candidate) < HOUR_MS)) continue;
       return new Date(candidate);
     }
   }
@@ -58,15 +47,13 @@ const ensureAutomaticSchedules = async () => {
   const connectedFacebook = await SocialAccount.exists({ platform: "facebook", status: "connected" });
   const connectedInstagram = await SocialAccount.exists({ platform: "instagram", status: "connected" });
   if (!connectedFacebook || !connectedInstagram) {
-    return { skipped: true, reason: "Connect both Facebook and Instagram to start automatic scheduling." };
+    return { skipped: true, reason: "Connect both Facebook and Instagram to start automatic posting." };
   }
 
   const products = await Product.find({ isActive: { $ne: false }, deletedAt: null })
     .sort({ createdAt: 1, _id: 1 })
     .select("_id createdAt images video videos");
   if (!products.length) return { created: 0, updated: 0, cancelledDuplicates: 0 };
-  const repeatEveryDays = Math.max(MIN_REPEAT_DAYS, Math.ceil(products.length / POSTING_HOURS.length));
-
   const productIds = products.map((product) => product._id);
   const allContent = await Content.find({ product: { $in: productIds } })
     .sort({ createdAt: -1, _id: -1 })
@@ -127,8 +114,11 @@ const ensureAutomaticSchedules = async () => {
       { autoManaged: true, status: "scheduled", scheduledAt: { $gt: new Date() } },
       { status: "processing" },
     ],
-  }).select("scheduledAt lastRunAt status");
-  const occupiedTimes = fixedSchedules.map((schedule) => new Date(
+  }).select("scheduledAt lastRunAt status repeatEnabled autoDeletePrevious generateNewContent");
+  const occupiedTimes = fixedSchedules.filter((schedule) =>
+    schedule.status === "processing" ||
+    (!schedule.repeatEnabled && !schedule.autoDeletePrevious && !schedule.generateNewContent)
+  ).map((schedule) => new Date(
     schedule.status === "processing" ? schedule.lastRunAt || schedule.scheduledAt : schedule.scheduledAt
   ).getTime());
   let created = 0;
@@ -144,31 +134,40 @@ const ensureAutomaticSchedules = async () => {
     if (inProgress) return null;
 
     const scheduled = productSchedules.find((schedule) => schedule.status === "scheduled");
-    const reusableSchedule = scheduled || productSchedules.find((schedule) => ["failed", "published"].includes(schedule.status));
+    const failed = productSchedules.find((schedule) => schedule.status === "failed");
+    const legacyPublished = productSchedules.find((schedule) =>
+      schedule.status === "published" && schedule.autoManaged && schedule.repeatEnabled
+    );
+    const completedOneTimePost = productSchedules.some((schedule) =>
+      schedule.status === "published" && schedule.autoManaged && !schedule.repeatEnabled
+    );
+    if (!scheduled && !failed && !legacyPublished && completedOneTimePost) return null;
+
+    const reusableSchedule = scheduled || failed || legacyPublished;
     const scheduledContentId = reusableSchedule ? String(reusableSchedule.content) : "";
     const content = eligibleContents.find((item) => String(item._id) === scheduledContentId) || eligibleContents[0];
     if (!content) return null;
 
-    const pendingPlatformRetry = Boolean(reusableSchedule?.retryOnlyFailed);
-    const lastProductPostAt = productSchedules.reduce((latest, schedule) => {
-      const timestamps = [
-        schedule.publishedAt,
-        ...(schedule.publishedPosts || []).filter((post) => post.success).map((post) => post.publishedAt),
-      ];
-      return timestamps.reduce((maxTime, timestamp) => {
-        const value = timestamp ? new Date(timestamp).getTime() : 0;
-        return Number.isFinite(value) ? Math.max(maxTime, value) : maxTime;
-      }, latest);
-    }, 0);
-    const repeatStart = lastProductPostAt ? lastProductPostAt + repeatEveryDays * DAY_MS : Date.now();
     const oldTime = reusableSchedule?.scheduledAt ? new Date(reusableSchedule.scheduledAt).getTime() : 0;
-    const notBefore = pendingPlatformRetry
+    const needsFreshQueue = Boolean(reusableSchedule && (
+      reusableSchedule.repeatEnabled ||
+      reusableSchedule.autoDeletePrevious ||
+      reusableSchedule.generateNewContent
+    ));
+    const preserveRetry = Boolean(
+      reusableSchedule?.retryOnlyFailed &&
+      reusableSchedule.status === "scheduled" &&
+      !needsFreshQueue
+    );
+    const notBefore = preserveRetry
       ? Math.max(Date.now(), oldTime)
-      : Math.max(Date.now(), repeatStart, scheduled && oldTime > Date.now() ? oldTime : 0);
-    return { productId, content, schedules: productSchedules, reusableSchedule, notBefore };
+      : !needsFreshQueue && scheduled && oldTime > Date.now()
+        ? oldTime
+        : Date.now();
+    return { productId, content, schedules: productSchedules, reusableSchedule, notBefore, queueOrder: oldTime };
   }).filter(Boolean);
 
-  plans.sort((a, b) => a.notBefore - b.notBefore || a.productId.localeCompare(b.productId));
+  plans.sort((a, b) => a.notBefore - b.notBefore || a.queueOrder - b.queueOrder || a.productId.localeCompare(b.productId));
 
   for (const plan of plans) {
     const current = plan.reusableSchedule;
@@ -176,19 +175,23 @@ const ensureAutomaticSchedules = async () => {
     const currentScheduledAt = current?.scheduledAt ? new Date(current.scheduledAt) : null;
     const currentScheduledAtMs = currentScheduledAt?.getTime() || 0;
     const currentSlotIsDue = currentScheduledAtMs <= Date.now() && plan.notBefore <= Date.now();
-
-    if (
-      current?.autoManaged &&
+    const preserveRetry = Boolean(
+      current?.retryOnlyFailed &&
       current.status === "scheduled" &&
-      current.retryOnlyFailed
-    ) {
-      // Retries are short-lived (about a minute); preserve their exact time
-      // and platform selection instead of moving them into the next daily slot.
+      !current.repeatEnabled &&
+      !current.autoDeletePrevious &&
+      !current.generateNewContent
+    );
+
+    if (preserveRetry) {
       scheduledAt = currentScheduledAt;
       occupiedTimes.push(scheduledAt.getTime());
     } else if (
       current?.autoManaged &&
       current.status === "scheduled" &&
+      !current.repeatEnabled &&
+      !current.autoDeletePrevious &&
+      !current.generateNewContent &&
       isPostingHour(currentScheduledAt) &&
       (currentScheduledAtMs >= plan.notBefore || currentSlotIsDue)
     ) {
@@ -197,7 +200,7 @@ const ensureAutomaticSchedules = async () => {
       scheduledAt = currentScheduledAt;
       occupiedTimes.push(scheduledAt.getTime());
     } else {
-      scheduledAt = findNextFreePostingSlot(plan.notBefore, occupiedTimes, repeatEveryDays);
+      scheduledAt = findNextFreePostingSlot(plan.notBefore, occupiedTimes);
       if (!scheduledAt) {
         deferred += 1;
         continue;
@@ -220,15 +223,14 @@ const ensureAutomaticSchedules = async () => {
     target.platforms = ["facebook", "instagram"];
     target.platform = "facebook";
     target.scheduledAt = scheduledAt;
-    target.repeatEnabled = true;
-    target.repeatEvery = repeatEveryDays;
+    target.repeatEnabled = false;
+    target.repeatEvery = 1;
     target.repeatUnit = "days";
     target.generateNewContent = false;
-    target.autoDeletePrevious = true;
+    target.autoDeletePrevious = false;
     target.autoManaged = true;
     target.status = "scheduled";
-    const preservePlatformRetry = Boolean(current?.retryOnlyFailed && current.status === "scheduled");
-    if (!preservePlatformRetry) {
+    if (!preserveRetry) {
       target.retryOnlyFailed = false;
       target.retryCount = 0;
       target.retryForScheduledAt = null;
@@ -288,7 +290,7 @@ const ensureAutomaticSchedules = async () => {
     const lastPublishedAt = publishedTimes.length ? Math.max(...publishedTimes) : 0;
     return {
       schedule,
-      notBefore: Math.max(Date.now(), lastPublishedAt ? lastPublishedAt + repeatEveryDays * DAY_MS : 0),
+      notBefore: Math.max(Date.now(), lastPublishedAt ? lastPublishedAt + HOUR_MS : 0),
     };
   }).sort((a, b) => a.notBefore - b.notBefore || String(a.schedule._id).localeCompare(String(b.schedule._id)));
   const normalizedTimes = [];
@@ -307,7 +309,7 @@ const ensureAutomaticSchedules = async () => {
       isPostingHour(new Date(currentTime));
     const nextTime = currentSlotIsDue
       ? new Date(currentTime)
-      : findNextFreePostingSlot(notBefore, normalizedTimes, repeatEveryDays);
+      : findNextFreePostingSlot(notBefore, normalizedTimes);
 
     if (!nextTime) {
       deferred += 1;
@@ -315,11 +317,11 @@ const ensureAutomaticSchedules = async () => {
     }
 
     const policyNeedsUpdate =
-      schedule.repeatEnabled !== true ||
-      Number(schedule.repeatEvery) !== repeatEveryDays ||
+      schedule.repeatEnabled !== false ||
+      Number(schedule.repeatEvery) !== 1 ||
       schedule.repeatUnit !== "days" ||
       schedule.generateNewContent !== false ||
-      schedule.autoDeletePrevious !== true ||
+      schedule.autoDeletePrevious !== false ||
       JSON.stringify([...(schedule.platforms || [])].sort()) !== JSON.stringify(["facebook", "instagram"]) ||
       schedule.retryOnlyFailed === true ||
       Number(schedule.retryCount || 0) !== 0 ||
@@ -328,11 +330,11 @@ const ensureAutomaticSchedules = async () => {
 
     if (nextTime.getTime() !== currentTime || policyNeedsUpdate) {
       schedule.scheduledAt = nextTime;
-      schedule.repeatEnabled = true;
-      schedule.repeatEvery = repeatEveryDays;
+      schedule.repeatEnabled = false;
+      schedule.repeatEvery = 1;
       schedule.repeatUnit = "days";
       schedule.generateNewContent = false;
-      schedule.autoDeletePrevious = true;
+      schedule.autoDeletePrevious = false;
       schedule.platforms = ["facebook", "instagram"];
       schedule.platform = "facebook";
       schedule.errorMessage = "";
@@ -349,21 +351,16 @@ const ensureAutomaticSchedules = async () => {
   return { created, updated, cancelledDuplicates, deferred, products: plans.length };
 };
 
-// Add a newly-created product without reconciling every existing product
-// schedule inside the product-save request. The full reconciliation still
-// runs from the schedule worker/cron; this creates the new product's slot
-// immediately with the same daytime and repeat rules.
+// Add a newly-created product to the end of the one-time hourly queue.
 const ensureAutomaticScheduleForContent = async (content) => {
   const [connectedFacebook, connectedInstagram] = await Promise.all([
     SocialAccount.exists({ platform: "facebook", status: "connected" }),
     SocialAccount.exists({ platform: "instagram", status: "connected" }),
   ]);
   if (!connectedFacebook || !connectedInstagram) {
-    return { skipped: true, reason: "Connect both Facebook and Instagram to start automatic scheduling." };
+    return { skipped: true, reason: "Connect both Facebook and Instagram to start automatic posting." };
   }
 
-  const productCount = await Product.countDocuments({ isActive: { $ne: false }, deletedAt: null });
-  const repeatEveryDays = Math.max(MIN_REPEAT_DAYS, Math.ceil(productCount / POSTING_HOURS.length));
   const occupiedSchedules = await Schedule.find({
     $or: [
       { autoManaged: true, status: "scheduled", scheduledAt: { $gt: new Date() } },
@@ -373,7 +370,7 @@ const ensureAutomaticScheduleForContent = async (content) => {
   const occupiedTimes = occupiedSchedules.map((schedule) => new Date(
     schedule.status === "processing" ? schedule.lastRunAt || schedule.scheduledAt : schedule.scheduledAt
   ).getTime()).filter(Number.isFinite);
-  const scheduledAt = findNextFreePostingSlot(Date.now(), occupiedTimes, repeatEveryDays);
+  const scheduledAt = findNextFreePostingSlot(Date.now(), occupiedTimes);
   if (!scheduledAt) throw new Error("No available automatic posting slot was found.");
 
   const schedule = new Schedule({
@@ -382,11 +379,11 @@ const ensureAutomaticScheduleForContent = async (content) => {
     platforms: ["facebook", "instagram"],
     platform: "facebook",
     scheduledAt,
-    repeatEnabled: true,
-    repeatEvery: repeatEveryDays,
+    repeatEnabled: false,
+    repeatEvery: 1,
     repeatUnit: "days",
     generateNewContent: false,
-    autoDeletePrevious: true,
+    autoDeletePrevious: false,
     autoManaged: true,
     status: "scheduled",
     errorMessage: "",
@@ -394,7 +391,7 @@ const ensureAutomaticScheduleForContent = async (content) => {
   await schedule.save();
   content.status = "scheduled";
   await content.save();
-  return { created: 1, scheduleId: schedule._id, scheduledAt, repeatEveryDays };
+  return { created: 1, scheduleId: schedule._id, scheduledAt };
 };
 
-module.exports = { ensureAutomaticSchedules, ensureAutomaticScheduleForContent };
+module.exports = { ensureAutomaticSchedules, ensureAutomaticScheduleForContent, findNextFreePostingSlot };
