@@ -111,6 +111,7 @@ const getSchedules = async (req, res) => {
           scheduledAt: 1,
         });
 
+    res.set("Cache-Control", "no-store");
     res.json({
       success: true,
       count: schedules.length,

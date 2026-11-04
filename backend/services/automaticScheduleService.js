@@ -46,11 +46,14 @@ const findNextFreePostingSlot = (notBefore, occupiedTimes) => {
 
 const clearHistoricalAutomaticPublishRecords = async () => {
   const migrations = mongoose.connection.collection("system_migrations");
-  const migrationId = "clear-automatic-publish-history-2026-11-04";
+  const previousMigration = await migrations.findOne({
+    _id: "clear-automatic-publish-history-2026-11-04",
+  });
+  const migrationId = "clear-automatic-publish-history-2026-11-04-v2";
   let migration = await migrations.findOne({ _id: migrationId });
   if (migration?.completedAt) return { alreadyCompleted: true, schedules: 0, contents: 0 };
 
-  const cutoff = migration?.cutoffAt || new Date();
+  const cutoff = migration?.cutoffAt || previousMigration?.cutoffAt || new Date();
   if (!migration) {
     try {
       await migrations.insertOne({ _id: migrationId, cutoffAt: cutoff, startedAt: new Date() });

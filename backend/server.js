@@ -165,6 +165,9 @@ app.get("/api/cron/process-schedules", async (req, res) => {
 
   try {
     const result = await processDueSchedules();
+    if (result.message === "Another schedule worker is already running.") {
+      return res.status(409).json({ success: false, ...result });
+    }
     const platformFailures = (result.schedules || []).flatMap((schedule) =>
       (schedule.results || [])
         .filter((platformResult) => !platformResult.success)
