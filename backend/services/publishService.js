@@ -12,11 +12,6 @@ const SocialAccount = require("../models/SocialAccount");
 const { ensureAutomaticSchedules } = require("./automaticScheduleService");
 const { getProductVideoAsset } = require("../utils/productVideo");
 
-const {
-  generateProductImageReelAsset,
-  deleteGeneratedReelAsset,
-} = require("./reelContentService");
-
 const META_GRAPH_VERSION =
   process.env.META_GRAPH_VERSION || "v24.0";
 
@@ -1565,67 +1560,32 @@ const processSchedule =
         throw new Error("TikTok publishing is not configured. Remove TikTok from this schedule before it runs.");
       }
 
-      const savedProductVideo = getProductVideoAsset(product);
-      if (savedProductVideo?.url) {
-        // Always prefer the seller's own product video for a Reel, including
-        // schedules created before automatic Reel preparation was added.
-        console.log("Using the seller-uploaded product video for this Reel.", {
-          productId: String(product._id),
-          publicId: savedProductVideo.publicId || "",
-        });
-        content.type = "reel";
-        content.media = {
-          url: savedProductVideo.url,
-          publicId: savedProductVideo.publicId || "",
-          resourceType: "video",
-        };
-        content.generatedAutomatically = true;
-        content.audioMode = "original";
-        await content.save();
-      } else if (
-        content.generatedAutomatically &&
-        content.audioMode === "legacy" &&
-        String(content.media?.publicId || "").startsWith("ecommerce/reels/")
-      ) {
-        // Existing generated photo Reels contain the old synthetic track.
-        // Replace that asset once with a newly generated silent Reel.
-        const oldMedia = content.media;
-        const generatedMedia = await generateProductImageReelAsset(product);
-        content.type = "reel";
-        content.media = generatedMedia;
-        content.audioMode = "none";
-        await content.save();
-        if (oldMedia?.publicId !== generatedMedia.publicId) {
-          await deleteGeneratedReelAsset(oldMedia);
+      const isLegacyGeneratedPhotoReel =
+        content.media?.resourceType === "video" &&
+        String(content.media?.publicId || "").startsWith("ecommerce/reels/");
+      if (content.generatedAutomatically || isLegacyGeneratedPhotoReel) {
+        const savedProductVideo = getProductVideoAsset(product);
+        const firstProductImage = (product.images || []).find((image) => image?.url);
+        const nextMedia = savedProductVideo?.url
+          ? { url: savedProductVideo.url, publicId: savedProductVideo.publicId || "", resourceType: "video" }
+          : firstProductImage
+            ? { url: firstProductImage.url, publicId: firstProductImage.publicId || "", resourceType: "image" }
+            : null;
+        if (!nextMedia) throw new Error("This product has no uploaded video or photo to publish.");
+
+        const nextType = nextMedia.resourceType === "video" ? "reel" : "post";
+        const mediaChanged =
+          content.type !== nextType ||
+          content.media?.url !== nextMedia.url ||
+          content.media?.publicId !== nextMedia.publicId ||
+          content.media?.resourceType !== nextMedia.resourceType;
+        if (mediaChanged || content.audioMode !== (nextMedia.resourceType === "video" ? "original" : "none")) {
+          content.type = nextType;
+          content.media = nextMedia;
+          content.generatedAutomatically = true;
+          content.audioMode = nextMedia.resourceType === "video" ? "original" : "none";
+          await content.save();
         }
-      } else if (
-        lockedSchedule.generateNewContent &&
-        lockedSchedule.repeatEnabled &&
-        lockedSchedule.runCount > 1 &&
-        !lockedSchedule.retryOnlyFailed &&
-        content.generatedAutomatically
-      ) {
-        // Refresh image-based media weekly in the same Content record, so
-        // each repost is fresh without creating another content card.
-        const oldMedia = content.media;
-        const generatedMedia = await generateProductImageReelAsset(product);
-        content.type = "reel";
-        content.media = generatedMedia;
-        content.generatedAutomatically = true;
-        content.audioMode = "none";
-        await content.save();
-        if (oldMedia?.publicId !== generatedMedia.publicId) {
-          await deleteGeneratedReelAsset(oldMedia);
-        }
-      } else if (content.type !== "reel" || content.media?.resourceType !== "video") {
-        // Convert older image-post schedules once, then use the stored Reel
-        // until its next automatic weekly refresh.
-        const generatedMedia = await generateProductImageReelAsset(product);
-        content.type = "reel";
-        content.media = generatedMedia;
-        content.generatedAutomatically = true;
-        content.audioMode = "none";
-        await content.save();
       }
 
       console.log(
@@ -1784,8 +1744,8 @@ const processSchedule =
           // PUBLISH AFTER PREVIOUS POST CLEANUP
           // ----------------------------------------
 
-          // A product's uploaded video is the preferred scheduled media.
-          // Use the generated Reel only when the product has no saved video.
+          // Automatic schedules use the product's uploaded video when present,
+          // otherwise they publish the original product photo as a photo post.
           await savePlatformResult({
             platform,
             postId: previousPostDeleted ? "" : previousPostId,
@@ -2319,8 +2279,7 @@ const processDueSchedules =
             retryOnlyFailed: -1,
             scheduledAt: 1,
           })
-          // One Reel may need one-time FFmpeg preparation if this is an older
-          // image-only schedule. Keep work serial and within the function cap.
+          // Keep work serial and within the function cap.
           .limit(1)
           .select("_id");
 

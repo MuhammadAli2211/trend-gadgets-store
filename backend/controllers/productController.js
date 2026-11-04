@@ -3,7 +3,6 @@ const Content = require("../models/Content");
 const Order = require("../models/Order");
 const cloudinary = require("../config/cloudinary");
 const { createProductSocialCaption } = require("../utils/socialCaption");
-const { generateProductImageReelAsset } = require("../services/reelContentService");
 const { ensureAutomaticScheduleForContent } = require("../services/automaticScheduleService");
 const crypto = require("crypto");
 
@@ -157,7 +156,6 @@ const deleteFromCloudinary = async (
 const createProduct = async (req, res) => {
   const uploadedImages = [];
   const uploadedVideos = [];
-  let uploadedSocialMedia = null;
   let createdProduct = null;
   try {
     const {
@@ -199,7 +197,6 @@ const createProduct = async (req, res) => {
     }
 
     const files = req.files || {};
-    const socialMediaFile = files.socialMedia?.[0];
     const imageFiles = [...(files.images || []), ...(files.productImage || [])];
     const videoFiles = [...(files.videos || []), ...(files.video || [])];
     const directVideoAssets = parseUploadedVideoAssets(req.body.videoAssets);
@@ -221,17 +218,6 @@ const createProduct = async (req, res) => {
     for (const file of videoFiles) {
       const result = await uploadToCloudinary(file.buffer, "video");
       uploadedVideos.push({ url: result.secure_url, publicId: result.public_id });
-    }
-
-    if (socialMediaFile) {
-      const contentMedia = socialMediaFile;
-      const resourceType = contentMedia.mimetype.startsWith("video/") ? "video" : "image";
-      const result = await uploadToCloudinary(contentMedia.buffer, resourceType);
-      uploadedSocialMedia = { url: result.secure_url, publicId: result.public_id, resourceType };
-    } else if (uploadedImages.length) {
-      uploadedSocialMedia = { ...uploadedImages[0], resourceType: "image" };
-    } else if (uploadedVideos.length) {
-      uploadedSocialMedia = { ...uploadedVideos[0], resourceType: "video" };
     }
 
     let slug = createSlug(name);
@@ -265,32 +251,23 @@ const createProduct = async (req, res) => {
     createdProduct = product;
 
     const uploadedProductVideo = uploadedVideos[0];
-    const uploadedSocialVideo = !uploadedProductVideo && uploadedSocialMedia?.resourceType === "video";
-    const reelMedia = uploadedProductVideo
+    const postMedia = uploadedProductVideo
       ? { ...uploadedProductVideo, resourceType: "video" }
-      : uploadedSocialVideo
-        ? uploadedSocialMedia
-        : await generateProductImageReelAsset(product);
-    uploadedSocialMedia = reelMedia;
-
-    const reelContent = await Content.create({
+      : { ...uploadedImages[0], resourceType: "image" };
+    const socialContent = await Content.create({
       product: product._id,
-      type: "reel",
+      type: uploadedProductVideo ? "reel" : "post",
       platform: "all",
       caption: createProductSocialCaption(product, process.env.FRONTEND_URL || ""),
-      media: {
-        url: reelMedia.url,
-        publicId: reelMedia.publicId,
-        resourceType: "video",
-      },
+      media: postMedia,
       generatedAutomatically: true,
-      audioMode: uploadedProductVideo || uploadedSocialVideo ? "original" : "none",
+      audioMode: uploadedProductVideo ? "original" : "none",
       status: "approved",
       createdBy: req.user._id,
     });
 
     try {
-      await ensureAutomaticScheduleForContent(reelContent);
+      await ensureAutomaticScheduleForContent(socialContent);
     } catch (scheduleError) {
       console.error("Product saved; automatic scheduling will retry in the background:", scheduleError.message);
     }
@@ -306,13 +283,6 @@ const createProduct = async (req, res) => {
     }
     await Promise.all(uploadedImages.map((image) => deleteFromCloudinary(image.publicId)));
     await Promise.all(uploadedVideos.map((video) => deleteFromCloudinary(video.publicId, "video")));
-    const alreadyCleanedPublicIds = new Set([
-      ...uploadedImages.map((image) => image.publicId),
-      ...uploadedVideos.map((video) => video.publicId),
-    ]);
-    if (uploadedSocialMedia?.publicId && !alreadyCleanedPublicIds.has(uploadedSocialMedia.publicId)) {
-      await deleteFromCloudinary(uploadedSocialMedia.publicId, uploadedSocialMedia.resourceType);
-    }
     console.error(
       "Create Product Error:",
       error

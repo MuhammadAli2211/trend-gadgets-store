@@ -35,7 +35,6 @@ router.post(
     { name: "videos", maxCount: 2 },
     { name: "productImage", maxCount: 1 },
     { name: "video", maxCount: 1 },
-    { name: "socialMedia", maxCount: 1 },
   ]),
   createProduct
 );

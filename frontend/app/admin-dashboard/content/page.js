@@ -699,7 +699,7 @@ export default function ContentManagementPage() {
               </h2>
 
               <p className="text-sm leading-5 text-gray-500">Pending work lives here. Click × to archive finished items; publishing history stays saved.</p>
-              <p className="mt-1 text-xs leading-5 text-gray-500">One item per product is shown. Uploaded video is preferred; otherwise the Reel is shown.</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">One item per product is shown. Uploaded video is used when available; otherwise the product photo is posted.</p>
             </div>
 
             <select

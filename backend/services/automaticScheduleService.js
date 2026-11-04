@@ -2,6 +2,7 @@ const Product = require("../models/Product");
 const Content = require("../models/Content");
 const Schedule = require("../models/Schedule");
 const SocialAccount = require("../models/SocialAccount");
+const { getProductVideoAsset } = require("../utils/productVideo");
 
 const PAKISTAN_OFFSET_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -62,14 +63,43 @@ const ensureAutomaticSchedules = async () => {
 
   const products = await Product.find({ isActive: { $ne: false }, deletedAt: null })
     .sort({ createdAt: 1, _id: 1 })
-    .select("_id createdAt");
+    .select("_id createdAt images video videos");
   if (!products.length) return { created: 0, updated: 0, cancelledDuplicates: 0 };
   const repeatEveryDays = Math.max(MIN_REPEAT_DAYS, Math.ceil(products.length / POSTING_HOURS.length));
 
   const productIds = products.map((product) => product._id);
   const allContent = await Content.find({ product: { $in: productIds } })
     .sort({ createdAt: -1, _id: -1 })
-    .select("_id product type platform caption media status generatedAutomatically createdBy createdAt");
+    .select("_id product type platform caption media status generatedAutomatically audioMode createdBy createdAt");
+  const productsById = new Map(products.map((product) => [String(product._id), product]));
+  for (const content of allContent) {
+    if (!content.generatedAutomatically) continue;
+    const product = productsById.get(String(content.product));
+    if (!product) continue;
+
+    const productVideo = getProductVideoAsset(product);
+    const productImage = (product.images || []).find((image) => image?.url);
+    const media = productVideo?.url
+      ? { url: productVideo.url, publicId: productVideo.publicId || "", resourceType: "video" }
+      : productImage
+        ? { url: productImage.url, publicId: productImage.publicId || "", resourceType: "image" }
+        : null;
+    if (!media) continue;
+
+    const type = media.resourceType === "video" ? "reel" : "post";
+    const audioMode = media.resourceType === "video" ? "original" : "none";
+    const mediaChanged =
+      content.type !== type ||
+      content.media?.url !== media.url ||
+      content.media?.publicId !== media.publicId ||
+      content.media?.resourceType !== media.resourceType;
+    if (mediaChanged || content.audioMode !== audioMode) {
+      content.type = type;
+      content.media = media;
+      content.audioMode = audioMode;
+      await content.save();
+    }
+  }
   const contentByProduct = new Map();
   const productByContentId = new Map();
   for (const content of allContent) {
@@ -193,7 +223,7 @@ const ensureAutomaticSchedules = async () => {
     target.repeatEnabled = true;
     target.repeatEvery = repeatEveryDays;
     target.repeatUnit = "days";
-    target.generateNewContent = true;
+    target.generateNewContent = false;
     target.autoDeletePrevious = true;
     target.autoManaged = true;
     target.status = "scheduled";
@@ -288,7 +318,7 @@ const ensureAutomaticSchedules = async () => {
       schedule.repeatEnabled !== true ||
       Number(schedule.repeatEvery) !== repeatEveryDays ||
       schedule.repeatUnit !== "days" ||
-      schedule.generateNewContent !== true ||
+      schedule.generateNewContent !== false ||
       schedule.autoDeletePrevious !== true ||
       JSON.stringify([...(schedule.platforms || [])].sort()) !== JSON.stringify(["facebook", "instagram"]) ||
       schedule.retryOnlyFailed === true ||
@@ -301,7 +331,7 @@ const ensureAutomaticSchedules = async () => {
       schedule.repeatEnabled = true;
       schedule.repeatEvery = repeatEveryDays;
       schedule.repeatUnit = "days";
-      schedule.generateNewContent = true;
+      schedule.generateNewContent = false;
       schedule.autoDeletePrevious = true;
       schedule.platforms = ["facebook", "instagram"];
       schedule.platform = "facebook";
@@ -355,7 +385,7 @@ const ensureAutomaticScheduleForContent = async (content) => {
     repeatEnabled: true,
     repeatEvery: repeatEveryDays,
     repeatUnit: "days",
-    generateNewContent: true,
+    generateNewContent: false,
     autoDeletePrevious: true,
     autoManaged: true,
     status: "scheduled",

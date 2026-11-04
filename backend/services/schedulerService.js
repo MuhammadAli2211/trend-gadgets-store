@@ -9,10 +9,6 @@ const Content = require("../models/Content");
 const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
 
-const {
-  generateFreshReelContent,
-} = require("./reelContentService");
-
 const META_GRAPH_VERSION =
   process.env.META_GRAPH_VERSION || "v24.0";
 
@@ -697,63 +693,6 @@ const processSchedule = async (
     if (!socialAccount) {
       throw new Error(
         `No connected ${lockedSchedule.platform} account found.`
-      );
-    }
-
-    /*
-    -----------------------------------------------
-    GENERATE FRESH CONTENT
-    -----------------------------------------------
-
-    First run:
-      use already approved content.
-
-    Second+ run:
-      create a fresh Reel if
-      generateNewContent = true.
-    */
-
-    if (
-      lockedSchedule.runCount > 0 &&
-      lockedSchedule.generateNewContent
-    ) {
-      console.log(
-        "Generating fresh content for repeat schedule..."
-      );
-
-      const newContent =
-        await generateFreshReelContent({
-          product,
-          createdBy:
-            lockedSchedule.createdBy,
-          platform:
-            lockedSchedule.platform,
-        });
-
-      if (!newContent) {
-        throw new Error(
-          "Fresh Reel generation failed."
-        );
-      }
-
-      /*
-      Mark old content as published
-      if it wasn't already.
-      */
-
-      content =
-        await Content.findById(
-          newContent._id
-        );
-
-      lockedSchedule.content =
-        newContent._id;
-
-      await lockedSchedule.save();
-
-      console.log(
-        "Fresh Reel generated:",
-        newContent._id
       );
     }
 
