@@ -1569,7 +1569,10 @@ const processSchedule =
       const isLegacyGeneratedPhotoReel =
         content.media?.resourceType === "video" &&
         String(content.media?.publicId || "").startsWith("ecommerce/reels/");
-      if (content.generatedAutomatically || isLegacyGeneratedPhotoReel) {
+      // Every automatic product schedule must publish the product's current
+      // uploaded video or first photo. Older content records may be missing
+      // the generatedAutomatically flag or the legacy reel public ID.
+      if (lockedSchedule.autoManaged || content.generatedAutomatically || isLegacyGeneratedPhotoReel) {
         const savedProductVideo = getProductVideoAsset(product);
         const firstProductImage = (product.images || []).find((image) => image?.url);
         const nextMedia = savedProductVideo?.url
