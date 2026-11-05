@@ -15,6 +15,7 @@ const analyticsRoutes = require("./routes/analyticsRoutes");
 const publicTrackingRoutes = require("./routes/publicTrackingRoutes");
 const publicSettingsRoutes = require("./routes/publicSettingsRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const audienceGrowthRoutes = require("./routes/audienceGrowthRoutes");
 
 const {
   startScheduleWorker,
@@ -191,6 +192,28 @@ app.get("/api/cron/process-schedules", async (req, res) => {
   }
 });
 
+// Daily audience-growth tasks run in the same protected Vercel function
+// environment; they do not publish social posts or send messages.
+app.get("/api/cron/audience-growth", async (req, res) => {
+  const expectedSecret = process.env.CRON_SECRET;
+  const authorization = req.get("authorization") || "";
+
+  if (!expectedSecret || authorization !== `Bearer ${expectedSecret}`) {
+    return res.status(401).json({ success: false, message: "Unauthorized." });
+  }
+
+  try {
+    const result = await audienceGrowthRoutes.runDailyAudienceGrowth();
+    return res.status(200).json({
+      message: result.skipped ? result.reason : "Daily audience-growth tasks checked.",
+      ...result,
+    });
+  } catch (error) {
+    console.error("Vercel audience-growth cron error:", error.message);
+    return res.status(500).json({ success: false, message: "Unable to run daily audience-growth tasks." });
+  }
+});
+
 // =========================
 // ROUTES
 // =========================
@@ -246,6 +269,11 @@ app.use(
 app.use(
   "/api/orders",
   orderRoutes
+);
+
+app.use(
+  "/api/audience-growth",
+  audienceGrowthRoutes
 );
 
 // =========================
