@@ -31,6 +31,7 @@ export default function AdminDashboardLayout({ children }) {
     { href: "/admin-dashboard/schedules", label: "Schedules" },
     { href: "/admin-dashboard/social-accounts", label: "Social accounts" },
     { href: "/admin-dashboard/analytics", label: "Analytics" },
+    { href: "/admin-dashboard/audience-growth", label: "Audience Growth" },
     { href: "/admin-dashboard/settings", label: "Settings" },
   ];
 
