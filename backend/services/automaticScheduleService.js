@@ -530,7 +530,9 @@ const resetAutomaticQueueOnce = async () => {
   let cancelled = 0;
   for (const schedule of schedules) {
     schedule.status = "cancelled";
-    schedule.autoManaged = false;
+    // Keep autoManaged=true on the cancelled historical record. The publisher
+    // uses all auto-managed records (including cancelled ones) to enforce the
+    // one-hour gap after the last confirmed Facebook/Instagram post.
     schedule.errorMessage = "Replaced during the one-time automatic queue rebuild. Previous publishing history was preserved.";
     schedule.retryOnlyFailed = false;
     schedule.retryCount = 0;
