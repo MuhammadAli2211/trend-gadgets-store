@@ -1681,7 +1681,7 @@ const processSchedule =
           content.media?.url !== nextMedia.url ||
           content.media?.publicId !== nextMedia.publicId ||
           content.media?.resourceType !== nextMedia.resourceType ||
-          JSON.stringify(content.media?.images || []) !== JSON.stringify(nextMedia.images || []);
+          JSON.stringify((content.media?.images || []).map(({ url, publicId }) => ({ url, publicId })) ) !== JSON.stringify((nextMedia.images || []).map(({ url, publicId }) => ({ url, publicId })));
         if (mediaChanged || content.audioMode !== (nextMedia.resourceType === "video" ? "original" : "none")) {
           content.type = nextType;
           content.media = nextMedia;
