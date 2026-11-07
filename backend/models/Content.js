@@ -46,6 +46,12 @@ const contentSchema = new mongoose.Schema(
         type: String,
         default: "",
       },
+
+      images: {
+        type: [{ url: { type: String, required: true }, publicId: { type: String, default: "" } }],
+        default: [],
+        validate: [(images) => images.length <= 10, "A carousel can contain up to 10 images."],
+      },
     },
 
     // =========================

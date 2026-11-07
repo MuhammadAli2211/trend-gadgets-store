@@ -172,11 +172,12 @@ const ensureAutomaticSchedules = async () => {
     if (!product) continue;
 
     const productVideo = getProductVideoAsset(product);
-    const productImage = (product.images || []).find((image) => image?.url);
+    const productImages = (product.images || []).filter((image) => image?.url).slice(0, 10);
+    const productImage = productImages[0];
     const media = productVideo?.url
-      ? { url: productVideo.url, publicId: productVideo.publicId || "", resourceType: "video" }
+      ? { url: productVideo.url, publicId: productVideo.publicId || "", resourceType: "video", images: [] }
       : productImage
-        ? { url: productImage.url, publicId: productImage.publicId || "", resourceType: "image" }
+        ? { url: productImage.url, publicId: productImage.publicId || "", resourceType: "image", images: productImages }
         : null;
     if (!media) continue;
 
@@ -186,7 +187,8 @@ const ensureAutomaticSchedules = async () => {
       content.type !== type ||
       content.media?.url !== media.url ||
       content.media?.publicId !== media.publicId ||
-      content.media?.resourceType !== media.resourceType;
+      content.media?.resourceType !== media.resourceType ||
+      JSON.stringify((content.media?.images || []).map(({ url, publicId }) => ({ url, publicId })) ) !== JSON.stringify((media.images || []).map(({ url, publicId }) => ({ url, publicId })));
     if (mediaChanged || content.audioMode !== audioMode) {
       content.type = type;
       content.media = media;
@@ -512,8 +514,44 @@ const ensureAutomaticScheduleForContent = async (content) => {
   return { created: 1, scheduleId: schedule._id, scheduledAt };
 };
 
+// One-time safe queue reset: preserve published post IDs/history, but rebuild
+// automatic product schedules into fresh future hourly slots. Manual schedules
+// and any currently-processing record are left untouched.
+const resetAutomaticQueueOnce = async () => {
+  const migrations = mongoose.connection.collection("system_migrations");
+  const migrationId = "rebuild-automatic-queue-2026-11-07-v1";
+  const existing = await migrations.findOne({ _id: migrationId });
+  if (existing?.completedAt) return { alreadyCompleted: true, cancelled: 0 };
+
+  const schedules = await Schedule.find({
+    autoManaged: true,
+    status: { $ne: "processing" },
+  });
+  let cancelled = 0;
+  for (const schedule of schedules) {
+    schedule.status = "cancelled";
+    // Keep autoManaged=true on the cancelled historical record. The publisher
+    // uses all auto-managed records (including cancelled ones) to enforce the
+    // one-hour gap after the last confirmed Facebook/Instagram post.
+    schedule.errorMessage = "Replaced during the one-time automatic queue rebuild. Previous publishing history was preserved.";
+    schedule.retryOnlyFailed = false;
+    schedule.retryCount = 0;
+    schedule.retryForScheduledAt = null;
+    await schedule.save();
+    cancelled += 1;
+  }
+
+  await migrations.updateOne(
+    { _id: migrationId },
+    { $set: { startedAt: existing?.startedAt || new Date(), completedAt: new Date(), cancelled } },
+    { upsert: true }
+  );
+  return { alreadyCompleted: false, cancelled };
+};
+
 module.exports = {
   clearHistoricalAutomaticPublishRecords,
+  resetAutomaticQueueOnce,
   ensureAutomaticSchedules,
   ensureAutomaticScheduleForContent,
   findNextFreePostingSlot,

@@ -13,6 +13,7 @@ const Product = require("../models/Product");
 const SocialAccount = require("../models/SocialAccount");
 const {
   clearHistoricalAutomaticPublishRecords,
+  resetAutomaticQueueOnce,
   ensureAutomaticSchedules,
   findNextFreePostingSlot,
 } = require("./automaticScheduleService");
@@ -502,6 +503,37 @@ const lookupPublishedUrl = async (baseUrl, postId, accessToken) => {
   }
 };
 
+const publishFacebookCarousel = async ({ content, account }) => {
+  const pageId = account.pageId || account.accountId;
+  const images = (content?.media?.images || []).filter((image) => image?.url).slice(0, 10);
+  if (!pageId || !account.accessToken || images.length < 2) {
+    throw new Error("Facebook carousel requires a Page, access token, and at least two images.");
+  }
+  try {
+    const attachments = [];
+    for (const image of images) {
+      const uploaded = await graphApi.post(`${META_GRAPH_BASE}/${pageId}/photos`, null, {
+        params: { url: image.url, published: false, access_token: account.accessToken },
+      });
+      const mediaId = uploaded.data?.id;
+      if (!mediaId) throw new Error("Facebook did not return an uploaded carousel image ID.");
+      attachments.push({ media_fbid: mediaId });
+    }
+    const response = await graphApi.post(`${META_GRAPH_BASE}/${pageId}/feed`, null, {
+      params: {
+        message: content.caption || "",
+        attached_media: JSON.stringify(attachments),
+        access_token: account.accessToken,
+      },
+    });
+    const postId = response.data?.id;
+    if (!postId) throw new Error("Facebook did not return a carousel post ID.");
+    return { success: true, postId, publishedUrl: await lookupPublishedUrl(META_GRAPH_BASE, postId, account.accessToken) };
+  } catch (error) {
+    throw formatMetaError(error, "Facebook carousel publish failed");
+  }
+};
+
 const publishFacebookPhoto = async ({ content, account }) => {
   const pageId = account.pageId || account.accountId;
   if (!pageId || !account.accessToken || !content?.media?.url) {
@@ -915,6 +947,60 @@ const getInstagramCaption = (content) => {
     .slice(0, 2200);
 };
 
+const publishInstagramCarousel = async ({ content, account }) => {
+  const instagramAccountId = account.instagramAccountId || account.accountId;
+  const accessToken = account.accessToken;
+  const graphBase = getInstagramGraphBase(account);
+  const images = (content?.media?.images || []).filter((image) => image?.url).slice(0, 10);
+  if (!instagramAccountId || !accessToken || images.length < 2) {
+    throw new Error("Instagram carousel requires an account, access token, and at least two images.");
+  }
+  await verifyInstagramAccount({ instagramAccountId, accessToken, graphBase });
+  try {
+    const childIds = [];
+    for (const image of images) {
+      const childResponse = await graphApi.post(`${graphBase}/${instagramAccountId}/media`, null, {
+        params: { image_url: image.url, is_carousel_item: true, access_token: accessToken },
+      });
+      const childId = childResponse.data?.id;
+      if (!childId) throw new Error("Instagram did not return a carousel image container ID.");
+      await waitForInstagramContainer({ creationId: childId, accessToken, mediaLabel: "carousel image", graphBase });
+      childIds.push(childId);
+    }
+    const parentResponse = await graphApi.post(`${graphBase}/${instagramAccountId}/media`, null, {
+      params: {
+        media_type: "CAROUSEL",
+        children: childIds.join(","),
+        caption: getInstagramCaption(content),
+        access_token: accessToken,
+      },
+    });
+    const creationId = parentResponse.data?.id;
+    if (!creationId) throw new Error("Instagram did not return a carousel container ID.");
+    await waitForInstagramContainer({ creationId, accessToken, mediaLabel: "carousel", graphBase });
+    let publishResponse = null;
+    let lastPublishError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        publishResponse = await graphApi.post(`${graphBase}/${instagramAccountId}/media_publish`, null, {
+          params: { creation_id: creationId, access_token: accessToken },
+        });
+        break;
+      } catch (error) {
+        lastPublishError = error;
+        if (!isInstagramMediaNotReady(error) || attempt === 3) throw error;
+        await sleep(3000);
+      }
+    }
+    if (!publishResponse && lastPublishError) throw lastPublishError;
+    const postId = publishResponse.data?.id;
+    if (!postId) throw new Error("Instagram did not return a published carousel ID.");
+    return { success: true, postId, publishedUrl: await lookupPublishedUrl(graphBase, postId, accessToken) };
+  } catch (error) {
+    throw formatMetaError(error, "Instagram carousel publish failed");
+  }
+};
+
 const publishInstagramPhoto = async ({ content, account }) => {
   const instagramAccountId = account.instagramAccountId || account.accountId;
   const accessToken = account.accessToken;
@@ -1004,6 +1090,9 @@ const publishToPlatform =
         if (content?.type !== "reel") return publishFacebookVideo({ content, account });
         return publishFacebookReel({ content, account });
       }
+      if (content?.media?.resourceType !== "video" && (content?.media?.images || []).filter((image) => image?.url).length > 1) {
+        return publishFacebookCarousel({ content, account });
+      }
       if (content?.media?.url && content?.media?.resourceType !== "video") {
         return publishFacebookPhoto({ content, account });
       }
@@ -1020,6 +1109,9 @@ const publishToPlatform =
 
       if (content?.media?.resourceType === "video" || content?.type === "reel") {
         return publishInstagramReel({ content, account, mediaType: content?.type === "reel" ? "REELS" : "VIDEO" });
+      }
+      if (content?.media?.resourceType !== "video" && (content?.media?.images || []).filter((image) => image?.url).length > 1) {
+        return publishInstagramCarousel({ content, account });
       }
       if (content?.media?.url && content?.media?.resourceType !== "video") {
         return publishInstagramPhoto({ content, account });
@@ -1574,11 +1666,12 @@ const processSchedule =
       // the generatedAutomatically flag or the legacy reel public ID.
       if (lockedSchedule.autoManaged || content.generatedAutomatically || isLegacyGeneratedPhotoReel) {
         const savedProductVideo = getProductVideoAsset(product);
-        const firstProductImage = (product.images || []).find((image) => image?.url);
+        const productImages = (product.images || []).filter((image) => image?.url).slice(0, 10);
+        const firstProductImage = productImages[0];
         const nextMedia = savedProductVideo?.url
-          ? { url: savedProductVideo.url, publicId: savedProductVideo.publicId || "", resourceType: "video" }
+          ? { url: savedProductVideo.url, publicId: savedProductVideo.publicId || "", resourceType: "video", images: [] }
           : firstProductImage
-            ? { url: firstProductImage.url, publicId: firstProductImage.publicId || "", resourceType: "image" }
+            ? { url: firstProductImage.url, publicId: firstProductImage.publicId || "", resourceType: "image", images: productImages }
             : null;
         if (!nextMedia) throw new Error("This product has no uploaded video or photo to publish.");
 
@@ -1587,7 +1680,8 @@ const processSchedule =
           content.type !== nextType ||
           content.media?.url !== nextMedia.url ||
           content.media?.publicId !== nextMedia.publicId ||
-          content.media?.resourceType !== nextMedia.resourceType;
+          content.media?.resourceType !== nextMedia.resourceType ||
+          JSON.stringify((content.media?.images || []).map(({ url, publicId }) => ({ url, publicId })) ) !== JSON.stringify((nextMedia.images || []).map(({ url, publicId }) => ({ url, publicId })));
         if (mediaChanged || content.audioMode !== (nextMedia.resourceType === "video" ? "original" : "none")) {
           content.type = nextType;
           content.media = nextMedia;
@@ -2136,6 +2230,8 @@ const processSchedule =
 const runDueSchedulePass =
   async () => {
     try {
+      const queueReset = await resetAutomaticQueueOnce();
+      if (!queueReset.alreadyCompleted) console.log("Rebuilt automatic schedule queue:", queueReset);
       const historyReset = await clearHistoricalAutomaticPublishRecords();
       if (!historyReset.alreadyCompleted) {
         console.log("Cleared old automatic post history:", historyReset);
