@@ -188,7 +188,7 @@ const ensureAutomaticSchedules = async () => {
       content.media?.url !== media.url ||
       content.media?.publicId !== media.publicId ||
       content.media?.resourceType !== media.resourceType ||
-      JSON.stringify(content.media?.images || []) !== JSON.stringify(media.images || []);
+      JSON.stringify((content.media?.images || []).map(({ url, publicId }) => ({ url, publicId })) ) !== JSON.stringify((media.images || []).map(({ url, publicId }) => ({ url, publicId })));
     if (mediaChanged || content.audioMode !== audioMode) {
       content.type = type;
       content.media = media;
