@@ -34,6 +34,13 @@ const parseCartSnapshot = (snapshot) => {
 
 export default function Storefront() {
   const [products, setProducts] = useState([]);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const nextOffsetRef = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const loadMoreSentinelRef = useRef(null);
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
@@ -96,46 +103,81 @@ export default function Storefront() {
 
   useEffect(() => {
     let active = true;
-    const refreshProducts = async () => {
-      const [productsResult, settingsResult] = await Promise.allSettled([
-        api.get("/public/products"),
-        api.get("/public/settings/whatsapp"),
-      ]);
-      if (!active) return;
-      if (productsResult.status === "fulfilled") {
-        const data = productsResult.value.data;
-        setProducts(Array.isArray(data.products) ? data.products : []);
-        setError("");
-      } else {
-        setError(productsResult.reason?.response?.data?.message || "Products are temporarily unavailable.");
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      setError("");
+      nextOffsetRef.current = 0;
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+      try {
+        const response = await api.get("/public/products", {
+          params: { limit: 20, offset: 0, search: search.trim(), category: category === "all" ? "" : category },
+        });
+        if (!active) return;
+        const data = response.data || {};
+        const firstPage = Array.isArray(data.products) ? data.products : [];
+        setProducts(firstPage);
+        setTotalProducts(Number(data.total) || 0);
+        setCategoryOptions(Array.isArray(data.categories) ? data.categories : []);
+        nextOffsetRef.current = firstPage.length;
+        setHasMore(Boolean(data.hasMore));
+      } catch (requestError) {
+        if (active) setError(requestError?.response?.data?.message || "Products are temporarily unavailable.");
+      } finally {
+        if (active) setLoading(false);
       }
-      if (settingsResult.status === "fulfilled") {
-        setWhatsappNumber(settingsResult.value.data?.settings?.whatsappNumber || "");
-      }
-      setLoading(false);
-    };
+    }, search.trim() ? 250 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [search, category]);
 
-    refreshProducts();
-    window.addEventListener("focus", refreshProducts);
-    return () => {
-      active = false;
-      window.removeEventListener("focus", refreshProducts);
-    };
+  useEffect(() => {
+    let active = true;
+    api.get("/public/settings/whatsapp").then((response) => {
+      if (active) setWhatsappNumber(response.data?.settings?.whatsappNumber || "");
+    }).catch(() => {});
+    return () => { active = false; };
   }, []);
 
-  const categories = useMemo(() => {
-    return getProductCategoryList(products).filter((item) => products.some((product) => normalizeProductCategory(product.category) === item));
-  }, [products]);
+  const loadMoreProducts = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore || loading) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const response = await api.get("/public/products", {
+        params: { limit: 20, offset: nextOffsetRef.current, search: search.trim(), category: category === "all" ? "" : category },
+      });
+      const data = response.data || {};
+      const nextProducts = Array.isArray(data.products) ? data.products : [];
+      setProducts((current) => {
+        const existingIds = new Set(current.map((product) => product._id));
+        return [...current, ...nextProducts.filter((product) => !existingIds.has(product._id))];
+      });
+      nextOffsetRef.current += nextProducts.length;
+      setTotalProducts(Number(data.total) || 0);
+      setHasMore(Boolean(data.hasMore));
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || "Could not load more products. Please scroll to retry.");
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [hasMore, loading, search, category]);
 
-  const filteredProducts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return products.filter((product) => {
-      const matchesCategory = category === "all" || normalizeProductCategory(product.category) === category;
-      const matchesSearch = !query || [product.name, product.category, product.description]
-        .some((value) => String(value || "").toLowerCase().includes(query));
-      return matchesCategory && matchesSearch;
-    });
-  }, [products, search, category]);
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMoreProducts();
+    }, { rootMargin: "500px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, loadMoreProducts]);
+
+  const categories = useMemo(() => {
+    const available = new Set(categoryOptions.map((item) => normalizeProductCategory(item)));
+    return getProductCategoryList(categoryOptions.map((item) => ({ category: item }))).filter((item) => available.has(item));
+  }, [categoryOptions]);
+  const filteredProducts = products;
 
   const addToCart = (product) => {
     setCart((items) => {
@@ -232,7 +274,7 @@ export default function Storefront() {
           <div className="mb-2 flex flex-col gap-2 sm:mb-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-lg font-bold sm:text-2xl">Shop toys & gadgets</h2>
-              <p className="hidden text-sm text-slate-500 sm:mt-1 sm:block">{loading ? "Loading products…" : `${filteredProducts.length} products`}</p>
+              <p className="hidden text-sm text-slate-500 sm:mt-1 sm:block">{loading ? "Loading products…" : `${totalProducts} products`}</p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
               <label className="sr-only" htmlFor="product-search">Search products</label>
@@ -299,6 +341,11 @@ export default function Storefront() {
                   </article>
                 );
               })}
+            </div>
+          )}
+          {!loading && !error && filteredProducts.length > 0 && (
+            <div ref={loadMoreSentinelRef} className="py-6 text-center text-sm text-slate-500" aria-live="polite">
+              {loadingMore ? "Loading more products…" : hasMore ? "Scroll down to load more products" : "You have seen all products"}
             </div>
           )}
         </section>
