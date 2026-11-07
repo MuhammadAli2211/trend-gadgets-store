@@ -18,27 +18,7 @@ router.get("/", async (req, res) => {
     const category = String(req.query.category || "").trim().slice(0, 80);
     const filter = { ...ACTIVE_PRODUCTS };
 
-    if (category) filter.category = new RegExp(`^${escapeRegex(category)}const express = require("express");
-const Product = require("../models/Product");
-
-const router = express.Router();
-
-const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 40;
-const ACTIVE_PRODUCTS = { isActive: true, deletedAt: null };
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-router.get("/", async (req, res) => {
-  try {
-    const requestedLimit = Number.parseInt(req.query.limit, 10);
-    const requestedOffset = Number.parseInt(req.query.offset, 10);
-    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
-    const offset = Number.isFinite(requestedOffset) ? Math.max(requestedOffset, 0) : 0;
-    const search = String(req.query.search || "").trim().slice(0, 100);
-    const category = String(req.query.category || "").trim().slice(0, 80);
-    const filter = { ...ACTIVE_PRODUCTS };
-
-, "i");
+    if (category) filter.category = new RegExp("^" + escapeRegex(category) + "$", "i");
     if (search) {
       const expression = new RegExp(escapeRegex(search), "i");
       filter.$or = [{ name: expression }, { category: expression }, { description: expression }];
