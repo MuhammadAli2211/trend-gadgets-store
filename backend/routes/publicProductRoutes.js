@@ -6,7 +6,7 @@ const router = express.Router();
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 40;
 const ACTIVE_PRODUCTS = { isActive: true, deletedAt: null };
-const escapeRegex = (value) => value.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 router.get("/", async (req, res) => {
   try {
