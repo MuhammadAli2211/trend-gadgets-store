@@ -276,7 +276,9 @@ const createProduct = async (req, res) => {
       type: uploadedProductVideo ? "reel" : "post",
       platform: "all",
       caption: createProductSocialCaption(product, process.env.FRONTEND_URL || ""),
-      media: postMedia,
+      media: uploadedProductVideo
+        ? postMedia
+        : { ...postMedia, images: uploadedImages.slice(0, 10) },
       generatedAutomatically: true,
       audioMode: uploadedProductVideo ? "original" : "none",
       status: "approved",
