@@ -173,7 +173,10 @@ export default function Storefront() {
     return () => observer.disconnect();
   }, [hasMore, loading, loadingMore, loadMoreProducts]);
 
-  const categories = useMemo(() => getProductCategoryList(categoryOptions.map((item) => ({ category: item }))), [categoryOptions]);
+  const categories = useMemo(() => {
+    const available = new Set(categoryOptions.map((item) => normalizeProductCategory(item)));
+    return getProductCategoryList(categoryOptions.map((item) => ({ category: item }))).filter((item) => available.has(item));
+  }, [categoryOptions]);
   const filteredProducts = products;
 
   const addToCart = (product) => {
