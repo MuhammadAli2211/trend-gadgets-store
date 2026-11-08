@@ -239,8 +239,18 @@ const ensureAutomaticSchedules = async () => {
   }
 
   const contentIds = allContent.map((content) => content._id);
+  // Cancelled auto-managed records are retained as the unique per-content
+  // schedule/history record after a queue rebuild. Reuse them instead of
+  // inserting a second autoManaged record for the same content (the schema
+  // has a unique partial index on content where autoManaged=true).
   const existingSchedules = contentIds.length
-    ? await Schedule.find({ content: { $in: contentIds }, status: { $ne: "cancelled" } }).sort({ scheduledAt: 1, createdAt: 1 })
+    ? await Schedule.find({
+        content: { $in: contentIds },
+        $or: [
+          { status: { $ne: "cancelled" } },
+          { status: "cancelled", autoManaged: true },
+        ],
+      }).sort({ scheduledAt: 1, createdAt: 1 })
     : [];
   const schedulesByProduct = new Map();
   for (const schedule of existingSchedules) {
@@ -284,7 +294,10 @@ const ensureAutomaticSchedules = async () => {
     );
     if (!scheduled && !failed && !legacyPublished && completedOneTimePost) return null;
 
-    const reusableSchedule = scheduled || failed || legacyPublished;
+    const cancelledAutomatic = productSchedules.find((schedule) =>
+      schedule.status === "cancelled" && schedule.autoManaged
+    );
+    const reusableSchedule = scheduled || failed || legacyPublished || cancelledAutomatic;
     const scheduledContentId = reusableSchedule ? String(reusableSchedule.content) : "";
     const content = eligibleContents.find((item) => String(item._id) === scheduledContentId) || eligibleContents[0];
     if (!content) return null;
