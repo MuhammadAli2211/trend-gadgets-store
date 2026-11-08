@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   process-due-schedules:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Wait for Vercel's production alias to serve this commit before asking it
     # to process schedules. GitHub's push event can arrive before deployment.
     timeout-minutes: 20
@@ -40,7 +40,7 @@ jobs:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           for attempt in $(seq 1 90); do
-            deployed_commit="$(curl --fail --silent --show-error --max-time 3 \
+            deployed_commit="$(curl --fail --silent --max-time 10 \
               https://trend-gadgets-api.vercel.app/api/health | jq -r '.deploymentCommit // empty')" || deployed_commit=""
             if [ "$deployed_commit" = "$EXPECTED_COMMIT" ]; then
               echo "Production API is serving $EXPECTED_COMMIT"
