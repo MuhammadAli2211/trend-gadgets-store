@@ -3,6 +3,7 @@ const Content = require("../models/Content");
 const Schedule = require("../models/Schedule");
 const SocialAccount = require("../models/SocialAccount");
 const { getProductVideoAsset } = require("../utils/productVideo");
+const { createProductSocialCaption } = require("../utils/socialCaption");
 const mongoose = require("mongoose");
 
 const PAKISTAN_OFFSET_MS = 5 * 60 * 60 * 1000;
@@ -35,7 +36,7 @@ const findNextFreePostingSlot = (notBefore, occupiedTimes) => {
   for (let day = 0; day < 366; day += 1) {
     for (const hour of POSTING_HOURS) {
       const candidate = firstDayUtc + day * DAY_MS + hour * HOUR_MS - PAKISTAN_OFFSET_MS;
-      if (candidate < minimum) continue;
+      if (candidate <= minimum) continue;
       if (occupiedTimes.some((time) => Math.abs(time - candidate) < HOUR_MS)) continue;
       return new Date(candidate);
     }
@@ -159,12 +160,43 @@ const ensureAutomaticSchedules = async () => {
 
   const products = await Product.find({ isActive: { $ne: false }, deletedAt: null })
     .sort({ createdAt: 1, _id: 1 })
-    .select("_id createdAt images video videos");
+    .select("_id name description category tags whatsappNumber createdBy createdAt images video videos");
   if (!products.length) return { created: 0, updated: 0, cancelledDuplicates: 0 };
   const productIds = products.map((product) => product._id);
-  const allContent = await Content.find({ product: { $in: productIds } })
+  let allContent = await Content.find({ product: { $in: productIds } })
     .sort({ createdAt: -1, _id: -1 })
     .select("_id product type platform caption media status generatedAutomatically audioMode createdBy createdAt");
+
+  // Automatically create approved social content for active products that do not have it yet.
+  const productsWithAutomaticContent = new Set(
+    allContent.filter((item) => item.generatedAutomatically).map((item) => String(item.product))
+  );
+  for (const product of products) {
+    if (productsWithAutomaticContent.has(String(product._id))) continue;
+    const productVideo = getProductVideoAsset(product);
+    const productImages = (product.images || []).filter((image) => image?.url).slice(0, 10);
+    const productImage = productImages[0];
+    const media = productVideo?.url
+      ? { url: productVideo.url, publicId: productVideo.publicId || "", resourceType: "video", images: [] }
+      : productImage
+        ? { url: productImage.url, publicId: productImage.publicId || "", resourceType: "image", images: productImages }
+        : null;
+    if (!media || !product.createdBy) continue;
+
+    const createdContent = await Content.create({
+      product: product._id,
+      type: media.resourceType === "video" ? "reel" : "post",
+      platform: "all",
+      caption: createProductSocialCaption(product, process.env.FRONTEND_URL || ""),
+      media,
+      generatedAutomatically: true,
+      audioMode: media.resourceType === "video" ? "original" : "none",
+      status: "approved",
+      createdBy: product.createdBy,
+    });
+    allContent.unshift(createdContent);
+    productsWithAutomaticContent.add(String(product._id));
+  }
   const productsById = new Map(products.map((product) => [String(product._id), product]));
   for (const content of allContent) {
     if (!content.generatedAutomatically) continue;
