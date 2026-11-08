@@ -10,7 +10,7 @@ const [loading, setLoading] = useState(true);
 const [refreshing, setRefreshing] = useState(false);
 const [error, setError] = useState("");
 const [scheduleSearch, setScheduleSearch] = useState("");
-const [statusFilter, setStatusFilter] = useState("scheduled");
+const [statusFilter, setStatusFilter] = useState("all");
 const [currentTime, setCurrentTime] = useState(null);
 
 const loadSchedules = async (showLoader = true) => {
