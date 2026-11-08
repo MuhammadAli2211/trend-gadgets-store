@@ -121,21 +121,27 @@ const getFacebookAccount = async () => {
 
 const getInstagramAccount =
   async () => {
+    // Prefer the token issued by Instagram Business Login. A Facebook
+    // Page reconnect can create/update a separate facebook_login record
+    // for the same username; blindly selecting the newest record may send
+    // that Page token to graph.instagram.com (or the wrong permission flow).
+    const accounts = await SocialAccount.find({
+      platform: "instagram",
+      status: "connected",
+      accessToken: {
+        $exists: true,
+        $ne: "",
+      },
+    }).sort({ updatedAt: -1 });
+
     const account =
-      await SocialAccount.findOne({
-        platform: "instagram",
-        status: "connected",
-        accessToken: {
-          $exists: true,
-          $ne: "",
-        },
-      }).sort({
-        updatedAt: -1,
-      });
+      accounts.find((candidate) =>
+        candidate.tokenType === "instagram_business_login"
+      ) || accounts[0];
 
     if (!account) {
       throw new Error(
-        "Instagram account is not connected."
+        "Instagram account is not connected. Connect it using Instagram Business Login."
       );
     }
 
@@ -154,6 +160,12 @@ const getInstagramAccount =
         "Instagram access token is missing."
       );
     }
+
+    console.log("Selected Instagram publishing credential:", {
+      tokenType: account.tokenType || "unknown",
+      accountId: String(instagramAccountId),
+      username: account.instagramUsername || "",
+    });
 
     return {
       account,
