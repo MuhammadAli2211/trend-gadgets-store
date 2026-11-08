@@ -319,6 +319,14 @@ const ensureAutomaticSchedules = async () => {
     const currentScheduledAt = current?.scheduledAt ? new Date(current.scheduledAt) : null;
     const currentScheduledAtMs = currentScheduledAt?.getTime() || 0;
     const currentSlotIsDue = currentScheduledAtMs <= Date.now() && plan.notBefore <= Date.now();
+
+    // A due automatic schedule belongs to the publisher, not the queue planner.
+    // Keep its timestamp intact so publishService can claim and process it.
+    if (current?.status === "scheduled" && currentSlotIsDue) {
+      occupiedTimes.push(currentScheduledAtMs);
+      continue;
+    }
+
     const preserveRetry = Boolean(
       (current?.retryOnlyFailed || (current?.publishedPosts || []).some((post) => !post.success && !post.manualRequired)) &&
       current.status === "scheduled" &&
@@ -452,6 +460,14 @@ const ensureAutomaticSchedules = async () => {
       continue;
     }
     const currentTime = new Date(schedule.scheduledAt).getTime();
+
+    // Never move a due schedule forward during reconciliation; it must remain
+    // visible to publishService's due-schedule query.
+    if (Number.isFinite(currentTime) && currentTime <= Date.now()) {
+      normalizedTimes.push(currentTime);
+      continue;
+    }
+
     const nextTime = findNextFreePostingSlot(notBefore, normalizedTimes);
 
     if (!nextTime) {
