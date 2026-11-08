@@ -327,7 +327,7 @@ const ensureAutomaticSchedules = async () => {
       !current.generateNewContent
     );
 
-    if (preserveRetry) {
+    if (preserveRetry && currentScheduledAtMs > Date.now()) {
       scheduledAt = currentScheduledAt;
       occupiedTimes.push(scheduledAt.getTime());
     } else if (
@@ -337,10 +337,9 @@ const ensureAutomaticSchedules = async () => {
       !current.autoDeletePrevious &&
       !current.generateNewContent &&
       isPostingHour(currentScheduledAt) &&
-      (currentScheduledAtMs >= plan.notBefore || currentSlotIsDue)
+      currentScheduledAtMs > Date.now() &&
+      currentScheduledAtMs >= plan.notBefore
     ) {
-      // Keep an eligible overdue slot due so the worker can publish it below.
-      // Moving it to the next future slot here made successful cron runs skip posts.
       scheduledAt = currentScheduledAt;
       occupiedTimes.push(scheduledAt.getTime());
     } else {
@@ -448,20 +447,12 @@ const ensureAutomaticSchedules = async () => {
   const normalizedTimes = [];
   for (const plan of normalizationPlans) {
     const { schedule, notBefore } = plan;
-    if (schedule.retryOnlyFailed) {
-      // A failed-platform retry may intentionally be scheduled between the
-      // normal top-of-hour slots. Leave it alone so the retry can run.
+    if (schedule.retryOnlyFailed && new Date(schedule.scheduledAt).getTime() > Date.now()) {
       normalizedTimes.push(new Date(schedule.scheduledAt).getTime());
       continue;
     }
     const currentTime = new Date(schedule.scheduledAt).getTime();
-    const currentSlotIsDue =
-      currentTime <= Date.now() &&
-      notBefore <= Date.now() &&
-      isPostingHour(new Date(currentTime));
-    const nextTime = currentSlotIsDue
-      ? new Date(currentTime)
-      : findNextFreePostingSlot(notBefore, normalizedTimes);
+    const nextTime = findNextFreePostingSlot(notBefore, normalizedTimes);
 
     if (!nextTime) {
       deferred += 1;
