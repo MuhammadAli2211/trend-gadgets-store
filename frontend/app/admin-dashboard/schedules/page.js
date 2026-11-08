@@ -397,7 +397,11 @@ const hasScheduleIssue = (schedule) => Boolean(
   schedule?.errorMessage ||
   getPublishedPosts(schedule).some((post) => !post.success && !post.manualRequired)
 );
-const attentionCount = schedules.filter((item) => item.status === "failed" || hasScheduleIssue(item)).length;
+const needsAttention = (schedule) =>
+  schedule?.status === "failed" ||
+  schedule?.status === "manual_required" ||
+  (schedule?.status === "scheduled" && hasScheduleIssue(schedule));
+const attentionCount = schedules.filter(needsAttention).length;
 const processingCount = schedules.filter((item) => item.status === "processing").length;
 const nextSchedule = schedules
   .filter((item) => ["scheduled", "processing"].includes(item.status))
@@ -407,7 +411,7 @@ const filteredSchedules = schedules.filter((item) => {
   const caption = getContentCaption(item).toLowerCase();
   const matchesSearch = `${productName} ${caption}`.includes(scheduleSearch.trim().toLowerCase());
   const matchesStatus = statusFilter === "all"
-    || (statusFilter === "attention" ? item.status === "failed" || hasScheduleIssue(item) : item.status === statusFilter);
+    || (statusFilter === "attention" ? needsAttention(item) : item.status === statusFilter);
   return matchesSearch && matchesStatus;
 }).sort((left, right) => new Date(left.scheduledAt || 0) - new Date(right.scheduledAt || 0));
 
