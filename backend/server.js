@@ -154,13 +154,22 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Called by the protected GitHub Actions worker. Keeping the secret out of the URL prevents anyone
+// Called by the protected Cloudflare Worker. Keeping the secret out of the URL prevents anyone
 // from triggering the publisher directly.
 app.get("/api/cron/process-schedules", async (req, res) => {
   const expectedSecret = process.env.CRON_SECRET;
   const authorization = req.get("authorization") || "";
+  const authorizationMatches =
+    Boolean(expectedSecret) && authorization === `Bearer ${expectedSecret}`;
 
-  if (!expectedSecret || authorization !== `Bearer ${expectedSecret}`) {
+  if (!authorizationMatches) {
+    // Safe diagnostics only: never log the secret or the Authorization header.
+    console.warn("[CRON_AUTH_DIAGNOSTIC]", {
+      secretConfigured: Boolean(expectedSecret),
+      authorizationHeaderPresent: Boolean(authorization),
+      bearerPrefixPresent: authorization.startsWith("Bearer "),
+      authorizationMatches,
+    });
     return res.status(401).json({ success: false, message: "Unauthorized." });
   }
 
