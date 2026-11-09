@@ -25,6 +25,9 @@ export default function AudienceGrowthPage() {
   const [engagements, setEngagements] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [products, setProducts] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [performance, setPerformance] = useState({ periods: {}, postingTimes: {} });
+  const [performanceDays, setPerformanceDays] = useState("28");
   const [filters, setFilters] = useState({ platform: "", category: "", location: "", date: "", status: "", search: "" });
   const [selectedProduct, setSelectedProduct] = useState("");
   const [caption, setCaption] = useState("");
@@ -44,18 +47,22 @@ export default function AudienceGrowthPage() {
     if (showLoading) setLoading(true);
     setError("");
     try {
-      const [dashboardResponse, prospectsResponse, engagementsResponse, campaignsResponse, productsResponse] = await Promise.all([
+      const [dashboardResponse, prospectsResponse, engagementsResponse, campaignsResponse, productsResponse, recommendationsResponse, performanceResponse] = await Promise.all([
         api.get("/audience-growth/dashboard"),
         api.get(`/audience-growth/prospects${query ? `?${query}` : ""}`),
         api.get("/audience-growth/engagements?status=pending_review"),
         api.get("/audience-growth/campaigns"),
         api.get("/products?limit=100"),
+        api.get("/audience-growth/recommendations"),
+        api.get("/audience-growth/performance"),
       ]);
       setDashboard({ ...initialDashboard, ...(dashboardResponse.data || {}) });
       setProspects(prospectsResponse.data?.prospects || []);
       setEngagements(engagementsResponse.data?.engagements || []);
       setCampaigns(campaignsResponse.data?.campaigns || []);
       setProducts(productsResponse.data?.products || []);
+      setRecommendations(recommendationsResponse.data?.recommendations || []);
+      setPerformance(performanceResponse.data || { periods: {}, postingTimes: {} });
     } catch (loadError) {
       setError(loadError.response?.data?.message || "Audience growth data load nahi hua.");
     } finally {
@@ -139,6 +146,56 @@ export default function AudienceGrowthPage() {
         <Stat label="WhatsApp clicks" value={loading ? "…" : totals.whatsappClicksToday || 0} note="Aaj ke tracked clicks" />
         <Stat label="Referral link visits" value={loading ? "…" : totals.referralVisits || 0} note={`${totals.referralVisitsToday || 0} aaj`} />
         <Stat label="Comments for review" value={loading ? "…" : totals.pendingEngagements || 0} note="Draft replies khud se send nahi hotay" />
+      </section>
+
+      <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div>
+          <h2 className="font-bold text-gray-900">Organic content & audience suggestions</h2>
+          <p className="mt-1 text-xs text-gray-500">Product details se category-based audience ideas, caption hooks aur hashtags. Ye hypotheses hain—verified Meta targeting nahi.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {recommendations.slice(0, 6).map((item) => (
+            <article key={item.productId} className="rounded-lg border border-gray-200 p-3">
+              <div className="flex items-start gap-3">
+                {item.image ? <img src={item.image} alt="" className="h-16 w-16 rounded-md object-cover" /> : null}
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-semibold text-sm text-gray-900">{item.productName}</h3>
+                  <p className="text-xs text-indigo-700">{item.audience?.category} · Audience: {(item.audience?.audience || []).join(", ")}</p>
+                  <p className="mt-1 text-xs text-gray-600">Interest ideas: {(item.audience?.suggestedInterests || []).join(", ")}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-gray-900">{item.content?.hook}</p>
+              <p className="mt-1 text-sm text-gray-700">{item.content?.caption}</p>
+              <p className="mt-2 text-xs text-indigo-700">{(item.content?.hashtags || []).join(" ")}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={() => copyText([item.content?.hook, item.content?.caption, (item.content?.hashtags || []).join(" ")].filter(Boolean).join("\n\n"))} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold">Copy caption</button>
+                <button type="button" onClick={() => { setSelectedProduct(item.productId); setCaption([item.content?.hook, item.content?.caption, (item.content?.hashtags || []).join(" ")].filter(Boolean).join("\n\n")); setMessage("Caption share-link form mein load ho gaya. Review karke use karein."); }} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold">Use as idea</button>
+              </div>
+            </article>
+          ))}
+          {!recommendations.length && <p className="text-sm text-gray-500">Active products available hon to yahan content ideas nazar aayenge.</p>}
+        </div>
+        <div className="border-t border-gray-100 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><h3 className="font-semibold text-gray-900">Organic performance learning</h3><p className="text-xs text-gray-500">Sirf currently recorded post metrics; missing Meta reach/non-follower data ko invent nahi kiya jata.</p></div>
+            <select aria-label="Performance period" value={performanceDays} onChange={(event) => setPerformanceDays(event.target.value)} className="rounded-md border border-gray-300 px-3 py-2 text-sm"><option value="7">Last 7 days</option><option value="28">Last 28 days</option><option value="90">Last 90 days</option></select>
+          </div>
+          {(() => {
+            const summary = performance.periods?.[performanceDays]?.total || {};
+            return <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Stat label="Post views" value={summary.available ? summary.views.toLocaleString() : "—"} note={summary.available ? `${summary.postsWithMetrics} posts with metrics` : "No recorded data"} />
+              <Stat label="Likes" value={summary.available ? summary.likes.toLocaleString() : "—"} />
+              <Stat label="Comments" value={summary.available ? summary.comments.toLocaleString() : "—"} />
+              <Stat label="Shares" value={summary.available ? summary.shares.toLocaleString() : "—"} />
+            </div>;
+          })()}
+          <div className="mt-3 rounded-lg bg-gray-50 p-3 text-sm">
+            <p className="font-semibold text-gray-800">Best posting times (Pakistan time)</p>
+            {performance.postingTimes?.available
+              ? <ul className="mt-1 list-disc pl-5 text-gray-700">{performance.postingTimes.recommendations.map((slot) => <li key={slot.slot}>{slot.slot} — {slot.posts} posts, average engagement rate {(slot.averageEngagementRate * 100).toFixed(1)}%</li>)}</ul>
+              : <p className="mt-1 text-gray-600">{performance.postingTimes?.reason || "Posting time recommendation abhi available nahi."}</p>}
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
