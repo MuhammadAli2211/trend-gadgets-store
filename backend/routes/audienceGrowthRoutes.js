@@ -13,6 +13,7 @@ const AudienceGrowthSnapshot = require("../models/AudienceGrowthSnapshot");
 const AudienceReferralCampaign = require("../models/AudienceReferralCampaign");
 const AudienceReferralEvent = require("../models/AudienceReferralEvent");
 const AudienceAutomationRun = require("../models/AudienceAutomationRun");
+const { detectProductAudience, generateProductContent, analyzePostingTimes, summarizeMetrics } = require("../services/organicGrowthEngine");
 
 const router = express.Router();
 const metaApi = axios.create({ timeout: 15_000, proxy: false });
@@ -254,6 +255,7 @@ const buildDashboard = async () => {
     growth: snapshots.reverse().map(({ platform, capturedDate, followers }) => ({ platform, date: capturedDate, followers })),
     categories: categories.sort(),
     connectedAccounts: { facebook: connected.has("facebook"), instagram: connected.has("instagram") },
+    growthEngine: { mode: "rules_based_no_paid_ai", note: "Product-based audience hypotheses and caption suggestions; not guaranteed reach or verified demographic targeting." },
     recentRuns,
     capabilities: {
       commentMonitoring: true,
@@ -388,6 +390,67 @@ router.get("/internal/referrals/report", n8nOnly, async (req, res) => {
     ]);
     return res.json({ success: true, campaigns });
   } catch (error) { console.error("Referral report failed:", error.message); return res.status(500).json({ success: false, message: "Unable to load referral report." }); }
+});
+
+// Product-based audience hypotheses and content drafts. This endpoint never publishes.
+router.get("/recommendations", protect, adminOnly, async (req, res) => {
+  try {
+    const products = await Product.find({ isActive: true, deletedAt: null })
+      .select("name category tags description price images")
+      .sort({ updatedAt: -1 }).limit(100).lean();
+    const recommendations = products.map((product) => ({
+      productId: String(product._id),
+      productName: product.name,
+      image: product.images?.[0]?.url || "",
+      audience: detectProductAudience(product),
+      content: generateProductContent(product),
+    }));
+    return res.json({
+      success: true,
+      mode: "rules_based_no_paid_ai",
+      note: "Audience suggestions are hypotheses inferred from product details, not verified Meta audience demographics. Review content before scheduling.",
+      recommendations,
+    });
+  } catch (error) {
+    console.error("Organic recommendations failed:", error.message);
+    return res.status(500).json({ success: false, message: "Unable to prepare organic recommendations." });
+  }
+});
+
+// Performance summary for 7/28/90 days. Missing Meta metrics remain unavailable, not fabricated zeroes.
+router.get("/performance", protect, adminOnly, async (req, res) => {
+  try {
+    const now = new Date();
+    const periods = [7, 28, 90];
+    const summaries = {};
+    const allRecords = await Analytics.find({
+      platform: { $in: ["facebook", "instagram"] },
+      createdAt: { $gte: new Date(now.getTime() - 90 * 86400000) },
+    }).select("platform views likes comments shares publishedAt createdAt").lean();
+    for (const days of periods) {
+      const since = new Date(now.getTime() - days * 86400000);
+      const records = allRecords.filter((item) => new Date(item.createdAt) >= since);
+      const byPlatform = {};
+      for (const platform of ["facebook", "instagram"]) {
+        byPlatform[platform] = summarizeMetrics(records.filter((item) => item.platform === platform));
+      }
+      summaries[days] = { total: summarizeMetrics(records), byPlatform };
+    }
+    const timing = analyzePostingTimes(allRecords.map((item) => ({
+      publishedAt: item.publishedAt || item.createdAt,
+      metrics: item,
+    })));
+    return res.json({
+      success: true,
+      timezone: "Asia/Karachi",
+      periods: summaries,
+      postingTimes: timing,
+      dataNote: "Uses only metrics currently stored in Cart2Door analytics. Reach, non-follower reach and impressions are not displayed unless a supported Meta metric has actually been collected.",
+    });
+  } catch (error) {
+    console.error("Organic performance summary failed:", error.message);
+    return res.status(500).json({ success: false, message: "Unable to calculate organic performance." });
+  }
 });
 
 router.get("/runs", protect, adminOnly, async (req, res) => {
