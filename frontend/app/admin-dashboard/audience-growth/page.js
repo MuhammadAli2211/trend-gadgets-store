@@ -169,7 +169,7 @@ export default function AudienceGrowthPage() {
               <p className="mt-2 text-xs text-indigo-700">{(item.content?.hashtags || []).join(" ")}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button type="button" onClick={() => copyText([item.content?.hook, item.content?.caption, (item.content?.hashtags || []).join(" ")].filter(Boolean).join("\n\n"))} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold">Copy caption</button>
-                <button type="button" onClick={() => setMessage("Content idea ready. Isay Content Generator mein review karke manual schedule karein.")} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold">Use as idea</button>
+                <button type="button" onClick={() => { setSelectedProduct(item.productId); setCaption([item.content?.hook, item.content?.caption, (item.content?.hashtags || []).join(" ")].filter(Boolean).join("\n\n")); setMessage("Caption share-link form mein load ho gaya. Review karke use karein."); }} className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold">Use as idea</button>
               </div>
             </article>
           ))}
