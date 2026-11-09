@@ -423,13 +423,17 @@ router.get("/performance", protect, adminOnly, async (req, res) => {
     const now = new Date();
     const periods = [7, 28, 90];
     const summaries = {};
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 86400000);
     const allRecords = await Analytics.find({
       platform: { $in: ["facebook", "instagram"] },
-      createdAt: { $gte: new Date(now.getTime() - 90 * 86400000) },
+      $or: [
+        { publishedAt: { $gte: ninetyDaysAgo } },
+        { publishedAt: null, createdAt: { $gte: ninetyDaysAgo } },
+      ],
     }).select("platform views likes comments shares publishedAt createdAt").lean();
     for (const days of periods) {
       const since = new Date(now.getTime() - days * 86400000);
-      const records = allRecords.filter((item) => new Date(item.createdAt) >= since);
+      const records = allRecords.filter((item) => new Date(item.publishedAt || item.createdAt) >= since);
       const byPlatform = {};
       for (const platform of ["facebook", "instagram"]) {
         byPlatform[platform] = summarizeMetrics(records.filter((item) => item.platform === platform));
