@@ -53,6 +53,8 @@ export default function AudienceGrowthPage() {
         api.get("/audience-growth/engagements?status=pending_review"),
         api.get("/audience-growth/campaigns"),
         api.get("/products?limit=100"),
+        api.get("/audience-growth/recommendations"),
+        api.get("/audience-growth/performance"),
       ]);
       setDashboard({ ...initialDashboard, ...(dashboardResponse.data || {}) });
       setProspects(prospectsResponse.data?.prospects || []);
