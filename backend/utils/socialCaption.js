@@ -18,9 +18,9 @@ const appendProductHashtags = (caption, product, siteUrl = process.env.FRONTEND_
   // Keep the post focused on the product: remove generated homepage,
   // WhatsApp, or other URLs. The canonical product URL is added below.
   const cleanCaption = String(caption || "")
-    .replace(/^\s*price\s*:\s*.*$/gim, "")
-    .replace(/https?:\/\/[^\s]+/gi, "")
-    .replace(/www\.[^\s]+/gi, "")
+    .split(/\r?\n/)
+    .filter((line) => !/(?:^\s*price\s*:|https?:\/\/|www\.|shop this product\s*:|chat on whatsapp\s*:)/i.test(line))
+    .join("\n")
     .trim()
     .slice(0, 1500);
 
