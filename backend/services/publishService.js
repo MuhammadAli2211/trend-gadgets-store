@@ -18,6 +18,7 @@ const {
   findNextFreePostingSlot,
 } = require("./automaticScheduleService");
 const { getProductVideoAsset } = require("../utils/productVideo");
+const { appendProductHashtags } = require("../utils/socialCaption");
 
 const META_GRAPH_VERSION =
   process.env.META_GRAPH_VERSION || "v24.0";
@@ -1642,6 +1643,15 @@ const processSchedule =
           "Product for scheduled content not found."
         );
       }
+
+      // Refresh every scheduled caption from the current product record so
+      // legacy drafts also publish the current price and one product URL.
+      content.caption = appendProductHashtags(
+        content.caption,
+        product,
+        process.env.FRONTEND_URL || ""
+      );
+      await content.save();
 
       // ----------------------------------------------
       // PLATFORMS
